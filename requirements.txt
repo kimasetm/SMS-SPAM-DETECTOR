@@ -1,0 +1,16 @@
+# Data processing
+pandas>=2.2
+numpy>=2.0
+
+# Machine learning (neural network) and evaluation
+torch>=2.9
+scikit-learn>=1.5
+
+# Graphs
+matplotlib>=3.9
+
+# Web interface
+streamlit>=1.40
+
+# Testing
+pytest>=8.0
