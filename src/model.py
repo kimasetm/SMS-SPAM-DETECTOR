@@ -14,6 +14,7 @@ Architecture (PyTorch equivalents of the Keras layers in the project brief):
 
 import json
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -56,6 +57,18 @@ class SpamClassifier(nn.Module):
         x = torch.relu(self.hidden(x))
         x = self.dropout(x)
         return self.output(x).squeeze(-1)                       # (batch,)
+
+
+def predict_probabilities(model, vectorizer, cleaned_texts, batch_size: int = 256) -> np.ndarray:
+    """Return the predicted spam probability (0-1) for each *cleaned* message."""
+    model.eval()
+    probabilities = []
+    with torch.no_grad():   # no gradients needed when only predicting
+        for start in range(0, len(cleaned_texts), batch_size):
+            ids = torch.tensor(vectorizer.transform(cleaned_texts[start:start + batch_size]))
+            # sigmoid converts the raw score (logit) into a probability
+            probabilities.append(torch.sigmoid(model(ids)).numpy())
+    return np.concatenate(probabilities) if probabilities else np.array([])
 
 
 def build_model(model_config: dict) -> SpamClassifier:

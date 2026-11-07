@@ -20,8 +20,6 @@ import matplotlib
 matplotlib.use("Agg")   # draw to image files; no window needed
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import torch
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import MaxNLocator
 from sklearn.metrics import (
@@ -35,7 +33,7 @@ from sklearn.metrics import (
 )
 
 from src import config
-from src.model import load_artifacts
+from src.model import load_artifacts, predict_probabilities
 from src.preprocessing import load_processed_split
 
 # Chart colors (validated for color-blind readers)
@@ -46,18 +44,6 @@ MUTED_INK = "#52514e"
 GRID = "#e1e0d9"
 AXIS = "#c3c2b7"
 BLUE_RAMP = ["#f0f6fe", "#cde2fb", "#86b6ef", "#3987e5", "#256abf", "#184f95", "#0d366b"]
-
-
-def predict_probabilities(model, vectorizer, texts, batch_size: int = 256) -> np.ndarray:
-    """Return the predicted spam probability (0-1) for each cleaned message."""
-    model.eval()
-    probabilities = []
-    with torch.no_grad():   # no gradients needed when only predicting
-        for start in range(0, len(texts), batch_size):
-            ids = torch.tensor(vectorizer.transform(texts[start:start + batch_size]))
-            # sigmoid converts the raw score (logit) into a probability
-            probabilities.append(torch.sigmoid(model(ids)).numpy())
-    return np.concatenate(probabilities) if probabilities else np.array([])
 
 
 def compute_metrics(y_true, y_prob, threshold: float = config.SPAM_THRESHOLD) -> dict:
