@@ -6,7 +6,7 @@ A machine learning web application that classifies SMS messages as **SPAM** or *
 The model is a PyTorch neural network trained on the
 [UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+collection) dataset.
 
-> Project under development. Completed so far: data preprocessing, the neural network and model evaluation.
+> Project under development. Completed so far: data preprocessing, the neural network, model evaluation and the prediction engine.
 
 ## Project structure
 
@@ -17,6 +17,7 @@ The model is a PyTorch neural network trained on the
 │   └── processed/          # train.csv, val.csv, test.csv (generated)
 ├── models/                 # trained weights, vocabulary, config, training history
 ├── reports/                # metrics.json and figures/ (evaluation charts)
+├── samples/                # example CSV for batch classification
 ├── src/
 │   ├── config.py           # shared paths, hyperparameters and settings
 │   ├── download_data.py    # downloads the UCI dataset
@@ -24,7 +25,9 @@ The model is a PyTorch neural network trained on the
 │   ├── text_vectorizer.py  # converts text into integer sequences for the model
 │   ├── model.py            # the neural network + save/load helpers
 │   ├── train.py            # training pipeline with early stopping
-│   └── evaluate.py         # test-set metrics, confusion matrix, charts
+│   ├── evaluate.py         # test-set metrics, confusion matrix, charts
+│   ├── predict.py          # prediction engine: message → SPAM/HAM + confidence
+│   └── batch.py            # CSV batch classification and safe export
 ├── tests/                  # pytest unit tests
 └── requirements.txt
 ```
@@ -131,6 +134,39 @@ Because only ~12% of messages are spam, accuracy alone is misleading: a model th
 
 Full results are saved in [`reports/metrics.json`](reports/metrics.json). Running the evaluation also writes
 `reports/misclassified_test_messages.csv` locally for error analysis. It isn't committed, because it contains raw dataset text.
+
+## Make predictions
+
+**One message (command line):**
+```bash
+python -m src.predict "WINNER!! You have been selected to receive a £900 prize reward! Call 09061701461"
+# SPAM  (confidence 97.7%, spam probability 0.9774)
+```
+
+**From Python:**
+```python
+from src.predict import predict_message
+
+result = predict_message("Are we still meeting for lunch tomorrow?")
+result.label             # "HAM"
+result.confidence        # probability of the predicted label (0.5–1.0)
+result.spam_probability  # model output: 0 = ham, 1 = spam
+```
+
+**Many messages from a CSV file:**
+```bash
+python -m src.batch samples/sample_messages.csv predictions.csv
+# Classified 12 messages: 5 spam, 6 ham, 1 invalid
+```
+The CSV needs a column named `message`, `text`, `sms` or `body` (or just a single column). Limits: 5 MB and 5,000 rows.
+The output adds `prediction`, `confidence`, `spam_probability` and `error` columns.
+Rows that can't be classified, such as empty messages, are marked `INVALID` instead of stopping the whole file.
+
+**How it works:** every message goes through the same `clean_text()` → `TextVectorizer` steps used in training,
+so the model always gets input in the format it learned from. The model is loaded once and reused.
+Input is validated (empty, non-text, too long, no readable words). Exported CSVs are protected against
+**CSV formula injection**: cells starting with `=`, `+`, `-` or `@` are escaped, so spreadsheet programs
+don't run them as formulas.
 
 ## Run tests
 
