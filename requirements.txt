@@ -1,0 +1,21 @@
+# Use the CPU-only build of PyTorch. The default Linux build includes ~2 GB
+# of NVIDIA GPU libraries that this small model doesn't need, which slows
+# down CI and can exceed Streamlit Community Cloud's resource limits.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Data processing
+pandas>=2.2
+numpy>=2.0
+
+# Machine learning (neural network) and evaluation
+torch>=2.9
+scikit-learn>=1.5
+
+# Graphs
+matplotlib>=3.9
+
+# Web interface
+streamlit>=1.40
+
+# Testing
+pytest>=8.0
