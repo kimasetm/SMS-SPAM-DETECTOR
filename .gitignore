@@ -13,6 +13,10 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
+# Misclassified messages contain raw (sometimes explicit) dataset text;
+# regenerate locally with: python -m src.evaluate
+reports/misclassified_test_messages.csv
+
 # Editors / OS
 .vscode/
 .idea/

@@ -40,6 +40,15 @@ VECTORIZER_FILE = MODEL_DIR / "vectorizer.json"          # vocabulary from train
 MODEL_CONFIG_FILE = MODEL_DIR / "model_config.json"      # architecture + training settings
 HISTORY_FILE = MODEL_DIR / "training_history.json"       # loss/accuracy per epoch
 
+# Evaluation outputs (created by src/evaluate.py)
+REPORTS_DIR = PROJECT_ROOT / "reports"
+FIGURES_DIR = REPORTS_DIR / "figures"
+METRICS_FILE = REPORTS_DIR / "metrics.json"
+MISCLASSIFIED_FILE = REPORTS_DIR / "misclassified_test_messages.csv"
+
+# A message is classified as spam when the predicted probability is >= this value
+SPAM_THRESHOLD = 0.5
+
 # --- Text vectorization ---
 MAX_TOKENS = 10000       # maximum vocabulary size
 SEQUENCE_LENGTH = 50     # words per message (covers >95% of training messages)
