@@ -6,7 +6,7 @@ A machine learning web application that classifies SMS messages as **SPAM** or *
 The model is a PyTorch neural network trained on the
 [UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+collection) dataset.
 
-> Project under development. Completed so far: data preprocessing and the neural network.
+> Project under development. Completed so far: data preprocessing, the neural network and model evaluation.
 
 ## Project structure
 
@@ -16,13 +16,15 @@ The model is a PyTorch neural network trained on the
 │   ├── raw/                # SMSSpamCollection (downloaded, not stored in git)
 │   └── processed/          # train.csv, val.csv, test.csv (generated)
 ├── models/                 # trained weights, vocabulary, config, training history
+├── reports/                # metrics.json and figures/ (evaluation charts)
 ├── src/
 │   ├── config.py           # shared paths, hyperparameters and settings
 │   ├── download_data.py    # downloads the UCI dataset
 │   ├── preprocessing.py    # cleaning, label encoding, train/val/test split
 │   ├── text_vectorizer.py  # converts text into integer sequences for the model
 │   ├── model.py            # the neural network + save/load helpers
-│   └── train.py            # training pipeline with early stopping
+│   ├── train.py            # training pipeline with early stopping
+│   └── evaluate.py         # test-set metrics, confusion matrix, charts
 ├── tests/                  # pytest unit tests
 └── requirements.txt
 ```
@@ -99,7 +101,36 @@ python -m src.train
 The trained model is saved in `models/` (`spam_classifier.pt`, `vectorizer.json`, `model_config.json`,
 `training_history.json`). These files are committed, so the app can run without retraining.
 In the current run, training stopped after epoch 18; the best epoch was 15, with a validation accuracy of 97.91%.
-Test-set results will be reported after evaluation.
+
+![Training history](reports/figures/training_history.png)
+
+## Evaluation results
+
+```bash
+python -m src.evaluate
+```
+
+Measured on the **held-out test set** (765 messages: 675 ham, 90 spam), which was not used during
+training or model selection. Spam is the positive class; threshold = 0.5.
+
+| Metric | Value |
+|---|---|
+| Accuracy | **97.65%** |
+| Precision (spam) | **95.00%**: of the messages flagged as spam, 95% were spam |
+| Recall (spam) | **84.44%**: the model caught 76 of the 90 spam messages |
+| F1-score (spam) | **0.8941** |
+| ROC-AUC | **0.9863** |
+
+<img src="reports/figures/confusion_matrix.png" alt="Confusion matrix" width="420">
+
+**What the results mean:** the model is cautious. It wrongly flagged only 4 of 675 legitimate
+messages (0.6%), but it missed 14 of 90 spam messages (15.6%). Most missed spam messages read like
+ordinary conversation or ads without typical spam words (e.g. *"for sale arsenal dartboard good condition"*).
+Because only ~12% of messages are spam, accuracy alone is misleading: a model that labels everything
+"ham" would still score 88%. That's why precision, recall and F1 are reported.
+
+Full results are saved in [`reports/metrics.json`](reports/metrics.json). Running the evaluation also writes
+`reports/misclassified_test_messages.csv` locally for error analysis. It isn't committed, because it contains raw dataset text.
 
 ## Run tests
 
