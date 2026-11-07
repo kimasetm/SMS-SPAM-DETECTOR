@@ -1,5 +1,7 @@
 # SmartSpam — SMS Spam Detection System
 
+[![Tests](https://github.com/kimasetm/SMS-SPAM-DETECTOR/actions/workflows/tests.yml/badge.svg)](https://github.com/kimasetm/SMS-SPAM-DETECTOR/actions/workflows/tests.yml)
+
 A machine learning web application that classifies SMS messages as **SPAM** or **HAM** (legitimate).
 The model is a PyTorch neural network trained on the
 [UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+collection) dataset.
@@ -9,6 +11,7 @@ The model is a PyTorch neural network trained on the
 ## Project structure
 
 ```
+├── .github/workflows/      # CI: runs tests on pull requests
 ├── data/
 │   ├── raw/                # SMSSpamCollection (downloaded, not stored in git)
 │   └── processed/          # train.csv, val.csv, test.csv (generated)
@@ -64,3 +67,6 @@ The vocabulary used by the model is built **only from the training set**, to pre
 ```bash
 python -m pytest
 ```
+
+Tests also run automatically with GitHub Actions (`.github/workflows/tests.yml`) on every pull request
+into `dev` or `main`, on Python 3.12 and 3.14.
