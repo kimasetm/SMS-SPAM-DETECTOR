@@ -1,0 +1,192 @@
+"""Train the SmartSpam neural network.
+
+Run from the project root (after preprocessing):
+    python -m src.train
+
+Pipeline:
+  1. Load the training and validation sets (the test set is NOT used here;
+     it is kept hidden until final evaluation in src/evaluate.py).
+  2. Fit the TextVectorizer vocabulary on the training messages only.
+  3. Train with mini-batches, checking validation loss after every epoch.
+  4. Early stopping: stop when validation loss hasn't improved for a few
+     epochs, and keep the weights from the best epoch.
+  5. Save the model weights, vectorizer, config and training history.
+"""
+
+import copy
+import json
+import random
+
+import numpy as np
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
+
+from src import config
+from src.model import build_model, save_artifacts
+from src.preprocessing import load_processed_split
+from src.text_vectorizer import TextVectorizer
+
+DEFAULT_SETTINGS = {
+    "max_tokens": config.MAX_TOKENS,
+    "sequence_length": config.SEQUENCE_LENGTH,
+    "embedding_dim": config.EMBEDDING_DIM,
+    "hidden_dim": config.HIDDEN_DIM,
+    "dropout": config.DROPOUT,
+    "batch_size": config.BATCH_SIZE,
+    "learning_rate": config.LEARNING_RATE,
+    "max_epochs": config.MAX_EPOCHS,
+    "patience": config.EARLY_STOPPING_PATIENCE,
+    "seed": config.RANDOM_SEED,
+}
+
+
+def set_seed(seed: int) -> None:
+    """Fix every source of randomness so training gives the same result each run."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.use_deterministic_algorithms(True)
+
+
+def make_loader(token_ids, labels, batch_size, shuffle, seed=None) -> DataLoader:
+    dataset = TensorDataset(
+        torch.tensor(token_ids, dtype=torch.long),
+        torch.tensor(labels, dtype=torch.float32),
+    )
+    # A seeded generator makes the shuffling order reproducible
+    generator = torch.Generator().manual_seed(seed) if shuffle else None
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, generator=generator)
+
+
+def run_epoch(model, loader, loss_fn, optimizer=None):
+    """One pass over the data. Trains if an optimizer is given, otherwise only evaluates.
+
+    Returns (average loss, accuracy).
+    """
+    training = optimizer is not None
+    model.train(training)   # dropout on while training, off while evaluating
+
+    total_loss, correct, count = 0.0, 0, 0
+    with torch.set_grad_enabled(training):
+        for batch_ids, batch_labels in loader:
+            logits = model(batch_ids)
+            loss = loss_fn(logits, batch_labels)
+
+            if training:
+                optimizer.zero_grad()   # clear gradients from the previous batch
+                loss.backward()         # backpropagation: compute how each weight affected the loss
+                optimizer.step()        # nudge each weight to reduce the loss
+
+            total_loss += loss.item() * len(batch_labels)
+            predictions = (logits > 0).float()       # logit > 0  <=>  probability > 0.5
+            correct += (predictions == batch_labels).sum().item()
+            count += len(batch_labels)
+
+    return total_loss / count, correct / count
+
+
+def train_model(train_texts, train_labels, val_texts, val_labels,
+                settings=None, verbose=True):
+    """Train a SpamClassifier. Returns (model, vectorizer, model_config, history)."""
+    settings = {**DEFAULT_SETTINGS, **(settings or {})}
+    set_seed(settings["seed"])
+
+    # Fit the vocabulary on TRAINING data only (prevents data leakage)
+    vectorizer = TextVectorizer(settings["max_tokens"], settings["sequence_length"])
+    vectorizer.fit(train_texts)
+
+    train_loader = make_loader(vectorizer.transform(train_texts), train_labels,
+                               settings["batch_size"], shuffle=True, seed=settings["seed"])
+    val_loader = make_loader(vectorizer.transform(val_texts), val_labels,
+                             settings["batch_size"], shuffle=False)
+
+    model_config = {
+        "vocab_size": vectorizer.vocab_size,
+        "embedding_dim": settings["embedding_dim"],
+        "hidden_dim": settings["hidden_dim"],
+        "dropout": settings["dropout"],
+    }
+    model = build_model(model_config)
+
+    # Binary cross-entropy loss: measures how far the predicted spam
+    # probability is from the true label (0 or 1). The "WithLogits" version
+    # applies the sigmoid internally, which is more numerically stable.
+    loss_fn = nn.BCEWithLogitsLoss()
+    # Adam: a popular optimizer that adapts the step size for each weight
+    optimizer = torch.optim.Adam(model.parameters(), lr=settings["learning_rate"])
+
+    history = {"train_loss": [], "train_accuracy": [], "val_loss": [], "val_accuracy": []}
+    best_val_loss = float("inf")
+    best_state = None
+    best_epoch = 0
+    epochs_without_improvement = 0
+
+    for epoch in range(1, settings["max_epochs"] + 1):
+        train_loss, train_acc = run_epoch(model, train_loader, loss_fn, optimizer)
+        val_loss, val_acc = run_epoch(model, val_loader, loss_fn)
+
+        history["train_loss"].append(train_loss)
+        history["train_accuracy"].append(train_acc)
+        history["val_loss"].append(val_loss)
+        history["val_accuracy"].append(val_acc)
+
+        if verbose:
+            print(f"Epoch {epoch:>2} | train loss {train_loss:.4f} acc {train_acc:.4f} "
+                  f"| val loss {val_loss:.4f} acc {val_acc:.4f}")
+
+        # Early stopping: remember the best weights; stop if no improvement
+        # for `patience` epochs (the model has started to overfit).
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_state = copy.deepcopy(model.state_dict())
+            best_epoch = epoch
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= settings["patience"]:
+                if verbose:
+                    print(f"Early stopping: no validation improvement for {settings['patience']} epochs.")
+                break
+
+    model.load_state_dict(best_state)
+    model.eval()
+
+    history["best_epoch"] = best_epoch
+    model_config["training"] = {
+        **{k: settings[k] for k in ("max_tokens", "sequence_length", "batch_size",
+                                    "learning_rate", "max_epochs", "patience", "seed")},
+        "epochs_run": len(history["train_loss"]),
+        "best_epoch": best_epoch,
+        "best_val_loss": best_val_loss,
+        "best_val_accuracy": history["val_accuracy"][best_epoch - 1],
+        "train_size": len(train_texts),
+        "val_size": len(val_texts),
+        "torch_version": torch.__version__,
+    }
+    return model, vectorizer, model_config, history
+
+
+def main() -> None:
+    train_df = load_processed_split(config.TRAIN_FILE)
+    val_df = load_processed_split(config.VAL_FILE)
+    print(f"Training on {len(train_df)} messages, validating on {len(val_df)} messages\n")
+
+    model, vectorizer, model_config, history = train_model(
+        train_df["clean_message"].tolist(), train_df["label_num"].tolist(),
+        val_df["clean_message"].tolist(), val_df["label_num"].tolist(),
+    )
+
+    save_artifacts(model, vectorizer, model_config)
+    config.HISTORY_FILE.write_text(json.dumps(history, indent=2), encoding="utf-8")
+
+    t = model_config["training"]
+    print(f"\nBest epoch: {t['best_epoch']} of {t['epochs_run']} "
+          f"(val loss {t['best_val_loss']:.4f}, val accuracy {t['best_val_accuracy']:.4f})")
+    print(f"Vocabulary size: {model_config['vocab_size']} | "
+          f"Trainable parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"Saved model files to {config.MODEL_DIR}")
+
+
+if __name__ == "__main__":
+    main()

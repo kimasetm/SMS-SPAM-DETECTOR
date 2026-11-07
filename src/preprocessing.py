@@ -138,6 +138,17 @@ def split_data(df: pd.DataFrame):
     )
 
 
+def load_processed_split(path) -> pd.DataFrame:
+    """Load a train/val/test CSV created by main()."""
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Processed data not found at {path}. Run: python -m src.preprocessing"
+        )
+    # keep_default_na=False: read every message as text. Otherwise pandas
+    # would turn messages such as "na" or "null" into missing values.
+    return pd.read_csv(path, keep_default_na=False)
+
+
 def describe_split(name: str, df: pd.DataFrame) -> None:
     spam = int(df["label_num"].sum())
     print(f"  {name:<10} {len(df):>5} messages | spam: {spam:>4} ({spam / len(df):.1%})")

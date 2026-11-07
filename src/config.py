@@ -29,5 +29,28 @@ LABEL_MAP = {"ham": 0, "spam": 1}
 VAL_SIZE = 0.15
 TEST_SIZE = 0.15
 
-# Fixed random seed so every run produces the same split (reproducibility)
+# Fixed random seed so every run produces the same split and the same
+# trained model (reproducibility)
 RANDOM_SEED = 42
+
+# Saved model files (created by src/train.py, used by evaluation and the app)
+MODEL_DIR = PROJECT_ROOT / "models"
+MODEL_WEIGHTS_FILE = MODEL_DIR / "spam_classifier.pt"    # learned weights
+VECTORIZER_FILE = MODEL_DIR / "vectorizer.json"          # vocabulary from training data
+MODEL_CONFIG_FILE = MODEL_DIR / "model_config.json"      # architecture + training settings
+HISTORY_FILE = MODEL_DIR / "training_history.json"       # loss/accuracy per epoch
+
+# --- Text vectorization ---
+MAX_TOKENS = 10000       # maximum vocabulary size
+SEQUENCE_LENGTH = 50     # words per message (covers >95% of training messages)
+
+# --- Neural network architecture ---
+EMBEDDING_DIM = 32       # size of the learned vector for each word
+HIDDEN_DIM = 16          # neurons in the hidden dense layer
+DROPOUT = 0.3            # fraction of neurons randomly switched off during training
+
+# --- Training ---
+BATCH_SIZE = 32          # messages per weight update
+LEARNING_RATE = 0.001    # step size for the Adam optimizer
+MAX_EPOCHS = 30          # upper limit on passes over the training data
+EARLY_STOPPING_PATIENCE = 3   # stop after this many epochs without validation improvement

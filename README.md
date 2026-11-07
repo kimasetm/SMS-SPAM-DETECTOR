@@ -6,7 +6,7 @@ A machine learning web application that classifies SMS messages as **SPAM** or *
 The model is a PyTorch neural network trained on the
 [UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+collection) dataset.
 
-> Project under development. Completed so far: project setup and data preprocessing.
+> Project under development. Completed so far: data preprocessing and the neural network.
 
 ## Project structure
 
@@ -15,11 +15,14 @@ The model is a PyTorch neural network trained on the
 ├── data/
 │   ├── raw/                # SMSSpamCollection (downloaded, not stored in git)
 │   └── processed/          # train.csv, val.csv, test.csv (generated)
+├── models/                 # trained weights, vocabulary, config, training history
 ├── src/
-│   ├── config.py           # shared paths and settings
+│   ├── config.py           # shared paths, hyperparameters and settings
 │   ├── download_data.py    # downloads the UCI dataset
 │   ├── preprocessing.py    # cleaning, label encoding, train/val/test split
-│   └── text_vectorizer.py  # converts text into integer sequences for the model
+│   ├── text_vectorizer.py  # converts text into integer sequences for the model
+│   ├── model.py            # the neural network + save/load helpers
+│   └── train.py            # training pipeline with early stopping
 ├── tests/                  # pytest unit tests
 └── requirements.txt
 ```
@@ -61,6 +64,42 @@ and place the `SMSSpamCollection` file from it in `data/raw/`.
 4. **Splits** the data 70% / 15% / 15% into training, validation and test sets, keeping the same spam ratio (~12%) in each.
 
 The vocabulary used by the model is built **only from the training set**, to prevent data leakage.
+
+## Machine learning architecture
+
+```
+SMS text
+  → clean_text()                 lowercase, placeholder tokens, remove punctuation
+  → TextVectorizer               words → integer IDs, padded/truncated to 50
+  → Embedding (6,314 × 32)       a learned 32-number vector for each word
+  → Global average pooling       average of the word vectors (padding ignored) → 1 vector per message
+  → Dropout (0.3)
+  → Dense (16, ReLU)
+  → Dropout (0.3)
+  → Dense (1) → sigmoid          probability that the message is spam
+```
+
+Built with PyTorch (`src/model.py`); 202,593 trainable parameters.
+The project brief allowed TensorFlow/Keras or PyTorch. PyTorch was chosen because TensorFlow did not
+provide packages for Python 3.14, the development environment's Python version.
+`TextVectorizer` and the masked average pooling are the PyTorch counterparts of Keras'
+`TextVectorization` and `GlobalAveragePooling1D` layers.
+
+## Train the model
+
+```bash
+python -m src.train
+```
+
+- Loss: binary cross-entropy · Optimizer: Adam (learning rate 0.001) · Batch size: 32
+- **Early stopping:** training stops when validation loss hasn't improved for 3 epochs, and the best epoch's weights are kept.
+- **Reproducible:** all random seeds are fixed, so retraining on the same machine produces identical weights.
+- The **test set is not used during training**; it's reserved for final evaluation.
+
+The trained model is saved in `models/` (`spam_classifier.pt`, `vectorizer.json`, `model_config.json`,
+`training_history.json`). These files are committed, so the app can run without retraining.
+In the current run, training stopped after epoch 18; the best epoch was 15, with a validation accuracy of 97.91%.
+Test-set results will be reported after evaluation.
 
 ## Run tests
 
