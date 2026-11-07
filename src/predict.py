@@ -60,11 +60,11 @@ def format_confidence(confidence: float) -> str:
 def validate_message(message) -> str:
     """Check user input and return its cleaned version, or raise InvalidMessageError."""
     if message is None:
-        raise InvalidMessageError("Please enter a message.")
+        raise InvalidMessageError("Message is empty.")
     if not isinstance(message, str):
         raise InvalidMessageError(f"Message must be text, not {type(message).__name__}.")
     if not message.strip():
-        raise InvalidMessageError("Please enter a message.")
+        raise InvalidMessageError("Message is empty.")
     if len(message) > MAX_MESSAGE_LENGTH:
         raise InvalidMessageError(
             f"Message is too long ({len(message):,} characters). "

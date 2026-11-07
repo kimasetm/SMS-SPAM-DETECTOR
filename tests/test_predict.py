@@ -30,7 +30,7 @@ def detector():
 
 @pytest.mark.parametrize("bad_input", [None, "", "   ", "\n\t"])
 def test_empty_input_is_rejected(bad_input):
-    with pytest.raises(InvalidMessageError, match="Please enter a message"):
+    with pytest.raises(InvalidMessageError, match="Message is empty"):
         validate_message(bad_input)
 
 
