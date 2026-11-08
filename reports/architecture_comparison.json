@@ -4,6 +4,7 @@
   "selected_settings": {
     "spam_weight": null,
     "tune_threshold": true,
+    "calibrate": false,
     "architecture": "avg_pool",
     "max_epochs": 60,
     "repair_misspellings": true
@@ -14,6 +15,7 @@
       "settings": {
         "spam_weight": null,
         "tune_threshold": true,
+        "calibrate": false,
         "architecture": "avg_pool",
         "max_epochs": 30,
         "repair_misspellings": false
@@ -33,6 +35,7 @@
       "settings": {
         "spam_weight": null,
         "tune_threshold": true,
+        "calibrate": false,
         "architecture": "avg_pool",
         "max_epochs": 60,
         "repair_misspellings": false
@@ -52,6 +55,7 @@
       "settings": {
         "spam_weight": null,
         "tune_threshold": true,
+        "calibrate": false,
         "architecture": "avg_pool",
         "max_epochs": 60,
         "repair_misspellings": true
@@ -71,6 +75,7 @@
       "settings": {
         "spam_weight": null,
         "tune_threshold": true,
+        "calibrate": false,
         "architecture": "cnn",
         "max_epochs": 60,
         "repair_misspellings": false
@@ -90,6 +95,7 @@
       "settings": {
         "spam_weight": null,
         "tune_threshold": true,
+        "calibrate": false,
         "architecture": "cnn",
         "max_epochs": 60,
         "repair_misspellings": true
