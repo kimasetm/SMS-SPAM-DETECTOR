@@ -1,0 +1,13 @@
+# Streamlit settings (used locally and on Streamlit Community Cloud).
+# This file contains no secrets. Never put passwords or API keys here;
+# Streamlit secrets belong in .streamlit/secrets.toml, which is git-ignored.
+
+[theme]
+primaryColor = "#2a78d6"
+
+[server]
+# Matches the batch upload limit enforced in src/batch.py
+maxUploadSize = 5
+
+[browser]
+gatherUsageStats = false
