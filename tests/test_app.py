@@ -98,6 +98,38 @@ def test_link_check_uses_the_predicted_message_not_later_edits(app):
     assert any("parcel-redelivery.info" in e.value for e in app.error)
 
 
+def test_prize_example_fills_sender_and_shows_sender_check(app):
+    click(app, "Prize scam")
+    assert app.text_input(key="sender_input").value == "09061701461"
+    click(app, "Predict")
+    assert any("Sender check" in m.value for m in app.markdown)
+    assert any("Premium-rate number" in e.value for e in app.error)
+
+
+def test_online_checks_are_off_by_default(app):
+    assert app.checkbox(key="online_checks").value is False
+    click(app, "Delivery scam")
+    click(app, "Predict")
+    assert any("Turn on **Online link checks**" in c.value for c in app.caption)
+
+
+def test_online_checks_use_blocklist_and_domain_age(monkeypatch):
+    """With online checks on, findings from the (faked) blocklist and RDAP appear. No real network calls."""
+    import src.threat_intel as ti
+    feed = "http://parcel-redelivery.info\n"
+    monkeypatch.setattr(ti, "_get", lambda url: feed.encode() if "openphish" in url else
+                        b'{"events": [{"eventAction": "registration", "eventDate": "2099-01-01T00:00:00Z"}]}')
+    monkeypatch.setattr(ti.fetch_blocklist, "__defaults__", (ti._get,))
+    monkeypatch.setattr(ti.lookup_domain_age, "__defaults__", (ti._get, None))
+
+    at = AppTest.from_file(APP_FILE, default_timeout=60).run()
+    at.checkbox(key="online_checks").check().run()
+    click(at, "Delivery scam")
+    click(at, "Predict")
+    assert not at.exception
+    assert any("Listed as an active phishing site" in e.value for e in at.error)
+
+
 def test_unreadable_input_shows_validation_message(app):
     app.text_area(key="message_input").input("!!! ???").run()
     click(app, "Predict")
