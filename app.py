@@ -234,7 +234,7 @@ def show_dashboard(detector: SpamDetector) -> None:
 
     figures = config.FIGURES_DIR
     if (figures / "confusion_matrix.png").exists():
-        st.image(str(figures / "confusion_matrix.png"), caption="Confusion matrix (test set)", width=440)
+        st.image(str(figures / "confusion_matrix.png"), width=440)
     if (figures / "training_history.png").exists():
         st.image(str(figures / "training_history.png"),
                  caption="Training vs validation loss and accuracy per epoch. Training stopped early when "
