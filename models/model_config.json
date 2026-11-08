@@ -4,7 +4,9 @@
   "hidden_dim": 16,
   "dropout": 0.3,
   "architecture": "avg_pool",
-  "threshold": 0.1,
+  "threshold": 0.19487372551365706,
+  "temperature": 1.5488166189124812,
+  "threshold_uncalibrated": 0.1,
   "training": {
     "max_tokens": 10000,
     "sequence_length": 50,
