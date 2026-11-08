@@ -13,6 +13,39 @@ from sklearn.metrics import (
 from src import config
 
 
+def expected_calibration_error(y_true, y_prob, n_bins: int = 10) -> float:
+    """Average gap between confidence and reality, weighted by how many messages fall in each bin.
+
+    Messages are grouped by predicted spam probability (0-10%, 10-20%, ...).
+    In each group, the average prediction is compared with the share that
+    really is spam. 0 = perfectly calibrated.
+    """
+    y_true = np.asarray(y_true, dtype=float)
+    y_prob = np.asarray(y_prob, dtype=float)
+    bins = np.clip((y_prob * n_bins).astype(int), 0, n_bins - 1)
+    ece = 0.0
+    for b in range(n_bins):
+        in_bin = bins == b
+        if in_bin.any():
+            ece += in_bin.mean() * abs(y_prob[in_bin].mean() - y_true[in_bin].mean())
+    return float(ece)
+
+
+def brier_score(y_true, y_prob) -> float:
+    """Mean squared difference between predicted probability and the true label (lower is better)."""
+    return float(np.mean((np.asarray(y_prob, dtype=float) - np.asarray(y_true, dtype=float)) ** 2))
+
+
+def reliability_bins(y_true, y_prob, n_bins: int = 10) -> list:
+    """Per-bin average prediction, actual spam rate and count (for a reliability diagram)."""
+    y_true = np.asarray(y_true, dtype=float)
+    y_prob = np.asarray(y_prob, dtype=float)
+    bins = np.clip((y_prob * n_bins).astype(int), 0, n_bins - 1)
+    return [{"bin": b, "mean_predicted": float(y_prob[bins == b].mean()),
+             "actual_spam_rate": float(y_true[bins == b].mean()), "count": int((bins == b).sum())}
+            for b in range(n_bins) if (bins == b).any()]
+
+
 def choose_threshold(y_true, y_prob) -> float:
     """Pick the decision threshold with the best F1-score.
 

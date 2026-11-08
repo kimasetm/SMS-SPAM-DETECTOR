@@ -32,7 +32,7 @@ EXPERIMENTS = {
     "imbalance": {
         "file": config.MODEL_COMPARISON_FILE,
         # The v2 experiment used the v2 model settings
-        "base": {"architecture": "avg_pool", "max_epochs": 30, "repair_misspellings": False},
+        "base": {"architecture": "avg_pool", "max_epochs": 30, "repair_misspellings": False, "calibrate": False},
         "variants": {
             "v1.0 baseline (no weight, threshold 0.5)": {"spam_weight": None, "tune_threshold": False},
             "No weight, tuned threshold": {"spam_weight": None, "tune_threshold": True},
@@ -42,7 +42,7 @@ EXPERIMENTS = {
     },
     "architecture": {
         "file": config.ARCHITECTURE_COMPARISON_FILE,
-        "base": {"spam_weight": None, "tune_threshold": True},
+        "base": {"spam_weight": None, "tune_threshold": True, "calibrate": False},
         "variants": {
             "Average pooling, 30 epochs (v2 settings)": {"architecture": "avg_pool", "max_epochs": 30,
                                                          "repair_misspellings": False},

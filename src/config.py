@@ -100,3 +100,5 @@ EARLY_STOPPING_PATIENCE = 3   # stop after this many epochs without validation i
 SPAM_WEIGHT = None
 # Choose the decision threshold that maximizes F1 on the validation set
 TUNE_THRESHOLD = True
+# Calibrate confidence scores with temperature scaling (fitted on the validation set)
+CALIBRATE = True

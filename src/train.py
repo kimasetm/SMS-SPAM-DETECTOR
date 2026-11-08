@@ -23,8 +23,9 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from src import config
+from src.calibration import calibrated_threshold, fit_temperature
 from src.metrics import choose_threshold
-from src.model import build_model, predict_probabilities, save_artifacts
+from src.model import build_model, predict_logits, predict_probabilities, save_artifacts
 from src.preprocessing import load_processed_split
 from src.text_vectorizer import TextVectorizer
 
@@ -45,6 +46,7 @@ DEFAULT_SETTINGS = {
     "conv_filters": config.CONV_FILTERS,
     "kernel_size": config.KERNEL_SIZE,
     "repair_misspellings": config.REPAIR_MISSPELLINGS,
+    "calibrate": config.CALIBRATE,
 }
 
 
@@ -187,6 +189,16 @@ def train_model(train_texts, train_labels, val_texts, val_labels,
         threshold = choose_threshold(val_labels, val_probs)
     model_config["threshold"] = threshold
 
+    # Calibrate confidence with temperature scaling, also on the VALIDATION set.
+    # The threshold is converted to the calibrated scale, so decisions don't change.
+    model.temperature = 1.0
+    if settings["calibrate"]:
+        temperature = fit_temperature(predict_logits(model, vectorizer, list(val_texts)), val_labels)
+        model.temperature = temperature
+        model_config["temperature"] = temperature
+        model_config["threshold_uncalibrated"] = threshold
+        model_config["threshold"] = calibrated_threshold(threshold, temperature)
+
     history["best_epoch"] = best_epoch
     model_config["training"] = {
         **{k: settings[k] for k in ("max_tokens", "sequence_length", "batch_size",
@@ -221,7 +233,8 @@ def main() -> None:
     t = model_config["training"]
     print(f"\nBest epoch: {t['best_epoch']} of {t['epochs_run']} "
           f"(val loss {t['best_val_loss']:.4f}, val accuracy {t['best_val_accuracy']:.4f})")
-    print(f"Spam weight: {t['spam_weight']:.2f} | Decision threshold: {model_config['threshold']:.2f}")
+    print(f"Spam weight: {t['spam_weight']:.2f} | Decision threshold: {model_config['threshold']:.2f}"
+          + (f" | Temperature: {model_config['temperature']:.3f}" if "temperature" in model_config else ""))
     print(f"Vocabulary size: {model_config['vocab_size']} | "
           f"Trainable parameters: {sum(p.numel() for p in model.parameters()):,}")
     print(f"Saved model files to {config.MODEL_DIR}")
