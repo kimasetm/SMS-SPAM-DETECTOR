@@ -14,13 +14,16 @@
 
 | Time | Section | What to show | What to say |
 |---|---|---|---|
-| 0:00–0:25 | **Introduction** | App title | "SmartSpam is a web app that uses a neural network to classify text messages as spam or legitimate. I trained it on the UCI SMS Spam Collection, about 5,500 real messages." |
-| 0:25–1:20 | **Message Scanner** | Click **Prize scam** → **Predict** (SPAM). Click **Friend** → **Predict** (HAM). Clear the box → **Predict** (warning). | "The app loads my trained PyTorch model; there are no keyword rules. Before predicting, the message is cleaned exactly like the training data. Using the same processing in training and prediction is essential." |
-| 1:20–2:10 | **Link Safety Check** | Click **Delivery scam** → **Predict**. Point to HAM, then to the red **High risk** link box and the warning below it. | "Here's a modern scam. The AI says HAM: its training data is from 2011, and it sees every link as the same placeholder word. So I added a separate Link Safety Check. It never opens the link; it looks for phishing signs like abused domain endings and words like 'redelivery'. It flags this link as high risk and warns the user." |
-| 2:10–2:50 | **Batch CSV** | Upload `labeled_messages.csv`. Point to the ✅/❌ column and "right on 19 of 20". | "Users can upload many messages at once and download the results. If the file includes the correct answers, the app scores itself. It got 19 of 20 right; the miss is that same kind of delivery scam." |
-| 2:50–3:55 | **Model Dashboard** | Metric tiles with the change from v1.0, confusion matrix, training chart | "These are results on 765 test messages the model never saw: 97.65% accuracy. Version 1 missed about 1 in 6 spam messages. I compared four fixes on the validation set; class weighting didn't help, but lowering the decision threshold to 30% did. On the test set, recall went from 84.4% to 85.6%, a modest gain, at the cost of one extra false alarm. Accuracy alone is misleading here: predicting 'not spam' for everything would score 88%." |
-| 3:55–4:30 | **How it's built** | GitHub: branches, a pull request with green checks | "The network is an embedding layer, average pooling, and dense layers with dropout. I developed it in feature branches merged through pull requests, with 127 automated tests running on GitHub Actions for every pull request." |
-| 4:30–4:50 | **Limitations & wrap-up** | Disclaimer at the bottom of the app | "This is a learning project, not security protection: the link check uses simple rules, and the model still misses some modern scams. Next steps would be newer data and models that understand word order. Thank you." |
+| 0:00–0:25 | **Introduction** | App title | "SmartSpam is a web app that uses a neural network to classify text messages as spam or legitimate. I trained it on two public datasets: about 5,500 messages from 2011 plus newer messages that include SMS phishing." |
+| 0:25–1:15 | **Message Scanner** | Click **Prize scam** → **Predict** (SPAM, plus the red **Premium-rate number** sender warning). Click **Friend** → **Predict** (HAM). Clear the box → **Predict** (warning). | "Every prediction comes from my trained PyTorch model; there are no keyword rules. The sender check is a separate rule: numbers starting with 09 are UK premium-rate lines. The same text cleaning is used in training and prediction, which is essential." |
+| 1:15–2:00 | **Link Safety Check** | Click **Delivery scam** → **Predict**. Point to SPAM, then to the red **High risk** link box. Optionally type `FR33 PR1ZE! Cl41m n0w` → **Predict**. | "This is a modern delivery scam. Version 2 called it legitimate because it was trained only on 2011 data; adding newer training data fixed that. The model sees every link as the same placeholder word, so a separate Link Safety Check looks at the link itself, without ever opening it. Version 3 also repairs disguised words like 'fr33 pr1ze'." |
+| 2:00–2:35 | **Batch CSV** | Upload `labeled_messages.csv`. Point to the ✅ column and "right on 20 of 20". | "Users can upload many messages at once and download the results. If the file includes the correct answers, the app scores itself: 20 of 20 on this small sample, which is too small to prove much on its own." |
+| 2:35–3:50 | **Model Dashboard** | Recall tiles for both test sets with the change from v2, the modern test set section, then the experiment expander | "These are results on messages the model never saw. On newer messages, recall went from 79% to 96%, and it catches 49 of 51 phishing texts. But there's a trade-off: on the original test set, false alarms rose from 6 to 16 out of 675, because of the threshold chosen on validation. I kept that model because I fixed the selection rule before testing. I also tested a CNN that reads word order, and it didn't beat the simpler model, so I didn't use it." |
+| 3:50–4:25 | **How it's built** | GitHub: releases v1.0 → v3.0, a pull request with green checks | "I built this in three releases using feature branches and pull requests, with 195 automated tests running on GitHub Actions for every pull request. Each release fixed measured weaknesses of the previous one." |
+| 4:25–4:50 | **Limitations & wrap-up** | Disclaimer at the bottom of the app | "This is a learning project, not security protection. It still misses scams that are pure conversation, like 'Hi mum, I lost my phone, send money', and it only understands English. Thank you." |
+
+**Online link checks:** leave the checkbox **off** during the demo unless you've tested the internet connection
+beforehand. It needs the OpenPhish and RDAP services to respond.
 
 **If something goes wrong:** if the deployed app is slow, switch to the local one. If the local app won't
 start, show the screenshots in the README and run `python -m src.predict "Congratulations! You've won a free iPhone"` in the terminal.
@@ -29,11 +32,21 @@ start, show the screenshots in the README and run `python -m src.predict "Congra
 
 - **Why PyTorch instead of TensorFlow?** TensorFlow had no packages for Python 3.14; the brief allowed either.
   PyTorch also made me write the training loop myself.
-- **How did you prevent data leakage?** I removed duplicate messages before splitting, built the vocabulary from
-  the training set only, and used the test set exactly once, for final evaluation.
-- **Why is recall lower than precision?** Spam is only 12% of the data, and many missed spam messages read like
-  normal texts. I tried class weighting and a lower threshold, comparing them on the validation set only so the
-  test score stays honest. The lower threshold worked best, but the test-set gain was small.
+- **How did you prevent data leakage?** I removed duplicate messages before splitting (including messages in the
+  second dataset that were copies of UCI messages), built the vocabulary from the training set only, and made every
+  model choice on the validation set.
+- **Why are there more false alarms in v3?** The threshold that maximized F1 on the validation set is low, so the
+  model catches more spam but flags more legitimate messages (16 of 675 on the UCI test set). I kept it because the
+  selection rule was fixed before testing; picking a model after seeing test results would make those results
+  unreliable. A more stable threshold choice is the next improvement.
+- **Why didn't the CNN win?** It was more cautious (higher precision, lower recall) and scored lower validation F1.
+  With only about 4,000 training messages, the extra complexity didn't pay off.
+- **What is temperature scaling?** The model's raw score is divided by one number (1.55, fitted on validation data)
+  before turning it into a probability, so confidence better matches reality. It changes no decisions. It helped on
+  the original test set but not on the modern one.
+- **How does drift monitoring work without labels?** It compares new messages with the validation data: the share of
+  unknown words, the predicted spam rate and how many predictions are uncertain. Spanish messages, for example, had
+  62.5% unknown words versus 4.4% normally.
 - **Why didn't class weighting help?** With weighting, the model's probabilities shift upward, so the best
   threshold also moved up (to 0.68–0.89), and the net effect was similar or worse. On this data, adjusting the
   threshold alone was enough.
@@ -41,7 +54,8 @@ start, show the screenshots in the README and run `python -m src.predict "Congra
   and it's labelled as rule-based in the app. Every SPAM/HAM prediction still comes from the neural network.
   Real spam filters combine ML with rules like these.
 - **Does the link check visit the website?** No. It only reads the URL text, which is safer, but it means it
-  can't see where shortened links lead.
+  can't see where shortened links lead. The optional online checks only look the address up in a phishing list and
+  ask the domain registry how old the domain is.
 - **What does dropout do?** It randomly switches off 30% of the neurons during training so the network can't rely
   on any single feature, which reduces overfitting. It's turned off when making predictions.
 - **What is the confidence score?** The model's probability for the label it chose. For example, a spam

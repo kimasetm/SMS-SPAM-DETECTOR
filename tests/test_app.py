@@ -98,6 +98,38 @@ def test_link_check_uses_the_predicted_message_not_later_edits(app):
     assert any("parcel-redelivery.info" in e.value for e in app.error)
 
 
+def test_prize_example_fills_sender_and_shows_sender_check(app):
+    click(app, "Prize scam")
+    assert app.text_input(key="sender_input").value == "09061701461"
+    click(app, "Predict")
+    assert any("Sender check" in m.value for m in app.markdown)
+    assert any("Premium-rate number" in e.value for e in app.error)
+
+
+def test_online_checks_are_off_by_default(app):
+    assert app.checkbox(key="online_checks").value is False
+    click(app, "Delivery scam")
+    click(app, "Predict")
+    assert any("Turn on **Online link checks**" in c.value for c in app.caption)
+
+
+def test_online_checks_use_blocklist_and_domain_age(monkeypatch):
+    """With online checks on, findings from the (faked) blocklist and RDAP appear. No real network calls."""
+    import src.threat_intel as ti
+    feed = "http://parcel-redelivery.info\n"
+    monkeypatch.setattr(ti, "_get", lambda url: feed.encode() if "openphish" in url else
+                        b'{"events": [{"eventAction": "registration", "eventDate": "2099-01-01T00:00:00Z"}]}')
+    monkeypatch.setattr(ti.fetch_blocklist, "__defaults__", (ti._get,))
+    monkeypatch.setattr(ti.lookup_domain_age, "__defaults__", (ti._get, None))
+
+    at = AppTest.from_file(APP_FILE, default_timeout=60).run()
+    at.checkbox(key="online_checks").check().run()
+    click(at, "Delivery scam")
+    click(at, "Predict")
+    assert not at.exception
+    assert any("Listed as an active phishing site" in e.value for e in at.error)
+
+
 def test_unreadable_input_shows_validation_message(app):
     app.text_area(key="message_input").input("!!! ???").run()
     click(app, "Predict")
@@ -131,7 +163,7 @@ def test_labelled_csv_shows_accuracy_on_users_file(app):
 
     assert not app.exception
     assert any("How accurate" in h.value for h in app.subheader)
-    assert len(app.table) == 1   # confusion matrix table
+    assert any("Predicted spam" in t.value.columns for t in app.table)   # confusion matrix table
     # The first "Accuracy" metric belongs to the batch tab (the dashboard's comes later)
     accuracy = next(m.value for m in app.metric if m.label == "Accuracy")
     assert accuracy.endswith("%")
@@ -140,6 +172,18 @@ def test_labelled_csv_shows_accuracy_on_users_file(app):
 def test_unreadable_labels_show_warning(app):
     app.file_uploader[0].upload("odd.csv", b"message,label\nhello there,maybe\n", "text/csv").run()
     assert any("none of its values could be read" in w.value for w in app.warning)
+
+
+def test_csv_upload_includes_collapsed_drift_check(app):
+    sample = (PROJECT_ROOT / "samples" / "labeled_messages.csv").read_bytes()
+    app.file_uploader[0].upload("labeled_messages.csv", sample, "text/csv").run()
+    drift = next(e for e in app.expander if e.label == "Data drift check")
+    assert not drift.proto.expanded            # collapsed, so the demo stays simple
+    assert not app.exception
+
+
+def test_dashboard_shows_calibration(app):
+    assert any("Confidence calibration" in m.value for m in app.markdown)
 
 
 def test_bad_csv_shows_error(app):
@@ -153,7 +197,9 @@ def test_bad_csv_shows_error(app):
 def test_dashboard_shows_real_metrics_from_file(app):
     """The dashboard must display the saved evaluation results, not hard-coded numbers."""
     test_metrics = json.loads(METRICS_FILE.read_text(encoding="utf-8"))["test"]
-    shown = {m.label: m.value for m in app.metric}
+    shown = {}
+    for m in app.metric:            # the first row of tiles is the UCI test set
+        shown.setdefault(m.label, m.value)
     assert shown["Recall"] == f"{test_metrics['recall']:.2%}"
     assert shown["Accuracy"] == f"{test_metrics['accuracy']:.2%}"
     assert shown["Precision"] == f"{test_metrics['precision']:.2%}"
@@ -161,6 +207,23 @@ def test_dashboard_shows_real_metrics_from_file(app):
     assert shown["F1-score"] == f"{test_metrics['f1']:.3f}"
 
 
-def test_dashboard_shows_change_from_v1(app):
+def test_dashboard_shows_change_from_previous_release(app):
+    from src.config import BASELINE_LABEL
     recall = next(m for m in app.metric if m.label == "Recall")
-    assert "vs v1.0" in recall.delta
+    assert f"vs {BASELINE_LABEL}" in recall.delta
+
+
+def test_dashboard_shows_experiments_and_robustness(app):
+    labels = [e.label for e in app.expander]
+    assert any(label.startswith("v3 experiment") for label in labels)
+    assert any(label.startswith("v2 experiment") for label in labels)
+    assert any("still caught when words are disguised" in m.value for m in app.markdown)
+
+
+def test_dashboard_shows_modern_test_set(app):
+    test_metrics = json.loads(METRICS_FILE.read_text(encoding="utf-8"))
+    if "test_modern" not in test_metrics:
+        pytest.skip("modern test set not evaluated")
+    assert any("Modern test set" in m.value for m in app.markdown)
+    recalls = [m.value for m in app.metric if m.label == "Recall"]
+    assert f"{test_metrics['test_modern']['recall']:.2%}" in recalls

@@ -7,7 +7,13 @@ Run from the project root:
 import pandas as pd
 import pytest
 
-from src.preprocessing import clean_text, prepare_dataframe, split_data
+from src.preprocessing import (
+    clean_text,
+    load_modern_data,
+    prepare_dataframe,
+    prepare_modern_dataframe,
+    split_data,
+)
 from src.text_vectorizer import OOV_ID, PAD_ID, TextVectorizer
 
 
@@ -26,6 +32,18 @@ def test_clean_text_replaces_urls_phones_and_money():
 
 def test_clean_text_decodes_html_entities():
     assert clean_text("I'll be there in &lt;#&gt; mins") == "i ll be there in mins"
+
+
+def test_clean_text_keeps_digits_inside_words():
+    # Letter-led words keep their digits (SMS slang, disguised words); standalone numbers still become numtoken
+    assert clean_text("FR33 PR1ZE!! See u b4 2nite, gr8") == "fr33 pr1ze see u b4 numtoken nite gr8"
+    assert clean_text("Txt WIN to 87121 150p/msg") == "txt win to phonetoken numtoken p msg"
+
+
+def test_duplicate_key_ignores_digits_like_v1_cleaning():
+    from src.preprocessing import duplicate_key
+    assert duplicate_key("FR33 prize") == duplicate_key("FR44 prize") == "fr numtoken prize"
+    assert duplicate_key("Call 09061701461 now") == "call phonetoken now"
 
 
 def test_clean_text_handles_empty_and_non_string():
@@ -99,6 +117,46 @@ def test_splits_do_not_overlap():
     assert not val_msgs & test_msgs
 
 
+# ---------- modern (Mishra & Soni) dataset ----------
+
+def write_modern_csv(tmp_path, rows):
+    path = tmp_path / "Dataset_5971.csv"
+    pd.DataFrame(rows, columns=["LABEL", "TEXT", "URL", "EMAIL", "PHONE"]).to_csv(path, index=False)
+    return path
+
+
+def test_load_modern_data_maps_smishing_to_spam(tmp_path):
+    path = write_modern_csv(tmp_path, [
+        ["ham", "see you soon", "No", "No", "No"],
+        ["Smishing", "verify your bank account now", "Yes", "No", "No"],
+        ["Spam", "win a prize", "No", "No", "Yes"],
+    ])
+    df = load_modern_data(path)
+    assert df["label"].tolist() == ["ham", "spam", "spam"]
+    assert df["category"].tolist() == ["ham", "smishing", "spam"]
+
+
+def test_load_modern_data_rejects_unknown_labels(tmp_path):
+    path = write_modern_csv(tmp_path, [["maybe", "hello", "No", "No", "No"]])
+    with pytest.raises(ValueError, match="Unknown labels"):
+        load_modern_data(path)
+
+
+def test_modern_messages_already_in_uci_are_removed():
+    modern = pd.DataFrame({"label": ["spam", "spam", "ham"], "category": ["smishing", "spam", "ham"],
+                           "message": ["Verify your account NOW!", "WIN a prize", "new message here"]})
+    uci_clean = {"win a prize"}
+    result = prepare_modern_dataframe(modern, uci_clean)
+    assert result["clean_message"].tolist() == ["verify your account now", "new message here"]
+    assert result["category"].tolist() == ["smishing", "ham"]   # category column is kept
+
+
+def test_split_sizes_can_be_customized():
+    df = prepare_dataframe(make_df(n_ham=800, n_spam=200))
+    train, val, test = split_data(df, val_size=0.15, test_size=0.25)
+    assert (len(train), len(val), len(test)) == (600, 150, 250)
+
+
 # ---------- TextVectorizer ----------
 
 def test_vectorizer_pads_and_truncates_to_sequence_length():
@@ -136,6 +194,47 @@ def test_vectorizer_respects_max_tokens():
 def test_vectorizer_requires_fit():
     with pytest.raises(RuntimeError):
         TextVectorizer().encode("hello")
+
+
+REPAIR_VOCAB = ["win a free prize now claim your cash", "see you at lunch winner congratulations"]
+
+
+def repair_vectorizer():
+    return TextVectorizer(repair_misspellings=True).fit(REPAIR_VOCAB)
+
+
+@pytest.mark.parametrize("words, expected", [
+    (["fr33", "pr1ze"], ["free", "prize"]),           # digits used as letters
+    (["cl41m"], ["claim"]),
+    (["c", "a", "s", "h"], ["cash"]),                # spaced-out letters
+    (["prlze", "winnner"], ["prize", "winner"]),     # one typo in a longer word
+])
+def test_repair_fixes_disguised_words(words, expected):
+    assert repair_vectorizer().repair_tokens(words) == expected
+
+
+def test_repair_never_changes_known_or_ambiguous_words():
+    vec = repair_vectorizer()
+    assert vec.repair_tokens(["see", "you", "at", "lunch"]) == ["see", "you", "at", "lunch"]
+    assert vec.repair_tokens(["b4"]) == ["b4"]            # 1 letter: too ambiguous
+    assert vec.repair_tokens(["u", "r", "a"]) == ["u", "r", "a"]   # "ura" isn't a known word
+    assert vec.repair_tokens(["zzzzz"]) == ["zzzzz"]      # nothing close in the vocabulary
+
+
+def test_repair_is_off_unless_enabled():
+    vec = TextVectorizer().fit(REPAIR_VOCAB)
+    assert vec.tokenize("fr33 prize") == ["fr", "numtoken", "prize"]
+    assert repair_vectorizer().tokenize("fr33 prize") == ["free", "prize"]
+
+
+def test_unknown_words_with_digits_are_split_like_numbers():
+    vec = TextVectorizer().fit(["hello b4"])
+    assert vec.tokenize("b4 abc123") == ["b4", "abc", "numtoken"]   # known slang kept, unknown split
+
+
+def test_repair_setting_is_saved(tmp_path):
+    repair_vectorizer().save(tmp_path / "v.json")
+    assert TextVectorizer.load(tmp_path / "v.json").repair_misspellings is True
 
 
 def test_vectorizer_save_and_load_roundtrip(tmp_path):

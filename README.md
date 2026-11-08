@@ -6,9 +6,13 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-web%20app-ff4b4b)
 
 SmartSpam is a machine learning web application that classifies SMS text messages as **SPAM** or **HAM**
-(legitimate). A PyTorch neural network, trained on the UCI SMS Spam Collection, powers a Streamlit app with a
-message scanner, a rule-based **Link Safety Check** for phishing links, CSV batch classification and a model
-evaluation dashboard.
+(legitimate). A PyTorch neural network, trained on two public SMS datasets including modern smishing (SMS phishing),
+powers a Streamlit app with a message scanner, a **Link Safety Check** with optional threat intelligence, a sender
+check, CSV batch classification with drift monitoring, and a model evaluation dashboard.
+
+The project went through three releases, each driven by measured weaknesses of the previous one:
+**v1.0** (baseline neural network) → **v2.0** (tuned threshold, rule-based link check) → **v3.0** (modern training
+data, misspelling repair, calibrated confidence, drift monitoring, threat-intelligence and sender checks).
 
 > ⚠️ SmartSpam is a text classification project for learning purposes. It is **not** protection against
 > phishing, scams or malware. See [Limitations](#limitations).
@@ -17,7 +21,7 @@ evaluation dashboard.
 
 ## Screenshots
 
-| Message scanner | Link Safety Check catches a scam the model missed |
+| Message scanner with sender check | Link Safety Check on a delivery scam |
 |---|---|
 | ![Message scanner](docs/screenshots/scanner.png) | ![Link Safety Check](docs/screenshots/link_check.png) |
 
@@ -40,17 +44,27 @@ evaluation dashboard.
 - **Link Safety Check:** flags phishing warning signs in any links (raw IP addresses, the `@` trick, punycode
   look-alikes, brand names on unofficial domains, link shorteners, abused domain endings, phishing words, plain
   `http`), without ever opening them. It warns when the AI rates the text as legitimate but the link is risky.
+- **Online threat intelligence (opt-in):** checks links against the [OpenPhish](https://openphish.com) community
+  phishing feed and looks up the domain's registration date with RDAP (domains under 30 days old are high risk).
+  No API keys are needed; it's off by default because it sends the link's address to those services, and network
+  failures are reported instead of breaking the app.
+- **Sender check:** an optional sender field flags UK/US premium-rate numbers, texts sent from email addresses, short
+  codes and sender names (which can be spoofed).
 - **Batch CSV classification:** upload up to 5,000 messages, review the results and download the predictions.
   If the file includes a `label` column, the app also reports accuracy, precision, recall and F1 on your file.
-- **Model evaluation dashboard:** real test-set metrics with the change from v1.0, the confusion matrix, training
-  charts and the class-imbalance experiment.
+  A collapsed **data drift check** warns when the uploaded messages look different from the training data.
+- **Model evaluation dashboard:** metrics on two test sets (original and modern messages) with the change from the
+  previous release, confusion matrices, a calibration chart, training charts and all model-selection experiments.
 - **Trained neural network:** every SPAM/HAM prediction comes from the model; there are no keyword rules. (The
-  Link Safety Check is a separate, clearly labelled rule-based layer.)
-- **Validation-tuned decision threshold:** chosen by a controlled experiment to catch more spam.
+  link and sender checks are separate, clearly labelled rule-based layers.)
+- **Misspelling repair:** disguised or misspelled words ("fr33 pr1ze", "c a s h", "prlze") are mapped to known words.
+- **Calibrated confidence:** temperature scaling so confidence scores better match reality.
+- **Controlled experiments:** the decision threshold, class weighting, a 1D CNN and misspelling repair were compared on
+  the validation set using a selection rule fixed in advance (`python -m src.compare_models`).
 - **Reproducible pipeline:** fixed random seeds, so retraining produces identical weights.
 - **Input validation and safe export:** clear errors for empty, overly long or unreadable input; exported CSVs are
   protected against spreadsheet **formula injection**.
-- **127 automated tests**, run by **GitHub Actions** on every pull request (Python 3.12 and 3.14).
+- **195 automated tests**, run by **GitHub Actions** on every pull request (Python 3.12 and 3.14).
 
 ## Technologies
 
@@ -70,21 +84,26 @@ evaluation dashboard.
 ```
 SMS text
   → clean_text()                 lowercase, decode HTML, replace URLs / phone numbers / prices / numbers
-                                 with placeholder words, remove punctuation
-  → TextVectorizer               words → integer IDs (vocabulary built from training data only),
-                                 padded or truncated to 50 words
-  → Embedding (6,314 × 32)       a learned 32-number vector for each word
+                                 with placeholder words, remove punctuation (digits inside words like "fr33" are kept)
+  → TextVectorizer               words → integer IDs (vocabulary built from training data only), with repair of
+                                 unknown disguised words ("fr33" → "free"); padded or truncated to 50 words
+  → Embedding (6,913 × 32)       a learned 32-number vector for each word
   → Global average pooling       averages the word vectors (ignoring padding) → one vector per message
   → Dropout (0.3)
   → Dense (16, ReLU)
   → Dropout (0.3)
-  → Dense (1) → sigmoid          probability that the message is spam (≥ 0.30 → SPAM; threshold tuned on validation)
+  → Dense (1)                    raw score (logit)
+  → ÷ temperature (1.55) → sigmoid   calibrated probability that the message is spam (≥ 0.19 → SPAM)
 ```
 
-- 202,593 trainable parameters.
+- 221,761 trainable parameters.
 - Training: binary cross-entropy loss, Adam optimizer (learning rate 0.001), batch size 32.
 - **Early stopping:** stops when validation loss hasn't improved for 3 epochs and keeps the best weights.
-  The current model stopped after epoch 18; the best epoch was 15.
+  The current model stopped after epoch 23; the best epoch was 20.
+- **Decision threshold** chosen on the validation set (best F1): 0.10 on the raw probability, which is 0.19 after
+  calibration; calibration doesn't change any decision.
+- A **1D CNN** (Conv1D over 3-word windows) is also implemented (`ARCHITECTURE = "cnn"`), but it didn't beat average
+  pooling in the validation experiment, so it isn't used.
 - The same `clean_text()` and vocabulary are used for training and prediction, so the model always gets input
   in the format it learned from.
 
@@ -96,43 +115,77 @@ counterparts of Keras' `TextVectorization` and `GlobalAveragePooling1D`.
 
 ## Dataset
 
-[UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+collection) by Almeida, Gómez Hidalgo
-and Yamakami (2011): 5,574 English SMS messages labelled ham or spam.
+Two English SMS datasets are used:
 
-| Step | Result |
-|---|---|
-| Raw messages | 5,574 (about 13% spam) |
-| After removing duplicate and empty messages | 5,096 (478 removed) |
-| Training / validation / test split (stratified 70 / 15 / 15) | 3,567 / 764 / 765 |
+1. **[UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+collection)** (Almeida, Gómez Hidalgo
+   and Yamakami, 2011): 5,574 messages labelled ham or spam.
+2. **[SMS Phishing Dataset for Machine Learning and Pattern Recognition](https://data.mendeley.com/datasets/f45bkkt8pr/1)**
+   (Mishra and Soni, 2022, CC BY 4.0): 5,971 messages labelled ham, spam or **smishing** (SMS phishing), including
+   newer scams such as COVID refund, bank-alert and Apple ID phishing. Many of its messages are copies of UCI
+   messages, so **only the 778 messages not already in the UCI data are used** (180 of them smishing).
 
-**Preventing data leakage:** duplicates are removed *before* splitting, so no message appears in both training and
-test data; the vocabulary is built from the training set only; and the test set is used once, for final evaluation.
-The dataset isn't stored in this repository; `python -m src.download_data` downloads it.
+| Step | UCI | Newer messages |
+|---|---|---|
+| Raw messages | 5,574 | 5,971 |
+| After removing duplicates, empty messages and (for the newer set) anything already in UCI | 5,096 | 778 |
+| Training / validation / test split (stratified) | 3,567 / 764 / 765 (70 / 15 / 15) | 466 / 117 / 195 (60 / 15 / 25) |
+
+Training and validation combine both sources. The **test sets are kept separate**: the UCI test set is exactly the
+one used for v1.0 and v2, so results stay comparable, and the newer messages form a **modern test set**.
+Smishing is treated as spam by the model and also reported separately.
+
+**Preventing data leakage:** duplicates are removed *before* splitting, so no message appears in more than one split;
+the vocabulary is built from the training set only; and model choices are made on the validation set.
+The datasets aren't stored in this repository; `python -m src.download_data` downloads them.
 
 ## Evaluation results
 
-Measured on the **held-out test set**: 765 messages (675 ham, 90 spam) that weren't used for training or model selection.
+**UCI test set:** 765 messages (675 ham, 90 spam) that weren't used for training or model selection.
 
-| Metric | v1.0 (threshold 0.50) | **v2 (threshold 0.30)** |
-|---|---|---|
-| Accuracy | 97.65% | **97.65%** |
-| Precision (spam) | 95.00% | **93.90%** |
-| Recall (spam) | 84.44% (76 of 90 caught) | **85.56%** (77 of 90 caught) |
-| F1-score (spam) | 0.8941 | **0.8953** |
-| False alarms | 4 of 675 | 5 of 675 |
-| ROC-AUC | 0.9863 | 0.9863 |
+| Metric | v1.0 (threshold 0.50) | v2 (threshold 0.30) | + newer data (threshold 0.75) | **+ misspelling repair (threshold 0.10)** |
+|---|---|---|---|---|
+| Accuracy | 97.65% | 97.65% | 97.78% | **96.86%** |
+| Precision (spam) | 95.00% | 93.90% | 92.94% | **83.67%** |
+| Recall (spam) | 84.44% (76 of 90) | 85.56% (77 of 90) | 87.78% (79 of 90) | **91.11%** (82 of 90) |
+| F1-score (spam) | 0.8941 | 0.8953 | 0.9029 | **0.8723** |
+| False alarms | 4 of 675 | 5 of 675 | 6 of 675 | **16 of 675** |
+| Disguised spam still caught | — | — | 67 of 90 | **85 of 90** |
+| ROC-AUC | 0.9863 | 0.9863 | 0.9909 | **0.9845** |
 
-<img src="reports/figures/confusion_matrix.png" alt="Confusion matrix" width="420">
+**Modern test set:** 195 newer messages (115 ham, 80 spam, of which 51 smishing).
 
-Because only ~12% of messages are spam, accuracy alone is misleading: labelling everything "ham" would score 88%.
+| Metric | v2 (UCI data only) | + newer data | **+ misspelling repair** |
+|---|---|---|---|
+| Accuracy | 91.28% | 96.41% | **97.44%** |
+| Precision (spam) | 100.00% | 100.00% | **97.47%** |
+| Recall (spam) | 78.75% (63 of 80) | 91.25% (73 of 80) | **96.25%** (77 of 80) |
+| Smishing caught | 44 of 51 (86.3%) | 48 of 51 (94.1%) | **49 of 51 (96.1%)** |
+| False alarms | 0 of 115 | 0 of 115 | **2 of 115** |
+| Disguised spam still caught | — | 55 of 80 | **79 of 80** |
+| F1-score (spam) | 0.8811 | 0.9542 | **0.9686** |
+
+**What changed:** training on newer messages improved results on modern scams the most. The misspelling-repair model
+catches more spam overall and more disguised spam (partly thanks to repair, mostly thanks to its lower threshold; see
+the experiment below), **but** the threshold chosen on the validation set (0.10) is low, so false alarms on the UCI
+test set rose from 6 to 16 (2.4% of legitimate messages).
+That model was kept because it was selected by a rule fixed before looking at test results; choosing a different
+model *after* seeing them would make the test results unreliable. A more stable way of choosing the threshold (e.g.
+cross-validation) would be the next step. (The 0.10 threshold is on the raw probability; with calibration it's shown as 0.19 in the
+app, and every decision is the same.)
+
+<img src="reports/figures/confusion_matrix.png" alt="Confusion matrix (UCI test set)" width="400"> <img src="reports/figures/confusion_matrix_modern.png" alt="Confusion matrix (modern test set)" width="400">
+
+Because only ~12% of UCI messages are spam, accuracy alone is misleading: labelling everything "ham" would score 88%.
 That's why precision, recall and F1 are reported. Full results are in [`reports/metrics.json`](reports/metrics.json)
-(v1.0: [`reports/metrics_v1.json`](reports/metrics_v1.json)).
+(earlier: [`metrics_v2.json`](reports/metrics_v2.json), [`metrics_v1.json`](reports/metrics_v1.json)).
 
 ### Improving spam recall: experiment
 
 v1.0 missed about 1 in 6 spam messages. To fix this, four ways of handling the class imbalance were compared using
-**only the validation set**, with a selection rule fixed before running: highest validation F1
-(`python -m src.compare_models`).
+**only the validation set**, with a selection rule fixed before running: highest validation F1.
+This experiment ran on the UCI data only; to reproduce these exact numbers, check out the `v2.0` tag and run
+`python -m src.download_data`, `python -m src.preprocessing` and `python -m src.compare_models`. (On the current code, `python -m src.compare_models imbalance` reruns it with today's
+data and saves the result separately.)
 
 | Variant (validation set, 89 spam) | Threshold | Precision | Recall | F1 |
 |---|---|---|---|---|
@@ -148,6 +201,67 @@ improvement is modest. The network's weights are unchanged; only the threshold m
 
 Note: the test set was first used to evaluate v1.0. All v2 choices were made on the validation set, and the test set
 was used once more only to report the final result.
+
+### Word order and misspellings: experiment
+
+Two remaining weaknesses were that average pooling ignores word order and that disguised words like "fr33 pr1ze"
+became unknown tokens. Two fixes were compared on the validation set (same rule: highest validation F1;
+`python -m src.compare_models`):
+
+- **1D CNN:** a convolution over 3-word windows with global max pooling, which reads short phrases, so word order matters.
+- **Misspelling repair:** unknown words are mapped to known ones when they look like disguised versions:
+  digits used as letters ("fr33" → "free"), spaced-out letters ("c a s h" → "cash") or a single typo ("prlze" → "prize").
+
+| Variant (validation set, 137 spam) | Threshold | Precision | Recall | F1 | Disguised spam caught* |
+|---|---|---|---|---|---|
+| Average pooling | 0.10 | 91.91% | 91.24% | 0.9158 | 97.08% |
+| **Average pooling + misspelling repair** ✅ | **0.10** | 91.43% | **93.43%** | **0.9242** | 97.08% |
+| 1D CNN | 0.45 | 96.72% | 86.13% | 0.9112 | 78.83% |
+| 1D CNN + misspelling repair | 0.40 | 92.37% | 88.32% | 0.9030 | 91.24% |
+
+\*Real validation spam with letters swapped for look-alike digits (first letter kept); for information only, not used
+for selection. It's measured at each variant's own threshold, so low-threshold variants score higher.
+
+**Findings:**
+- The **CNN did not beat average pooling** on this small dataset: it was more cautious (higher precision, lower
+  recall). Average pooling was kept, so word order is still ignored.
+- **Misspelling repair** was selected because it catches more ordinary spam (+3 on validation; on the modern test set,
+  the same model catches 77 of 80 spam with repair vs 73 without).
+- **Effect on disguised spam:** at the selected threshold (0.10), disguised spam is caught almost as often as the
+  original *with or without* repair, because a disguised word the model can't repair becomes a "numtoken" placeholder
+  that it links to spam. Compared at a **fixed 0.5 threshold**, repair clearly helps: disguised spam caught rises from
+  69 → 75 of 80 (modern test), 81 → 83 of 90 (UCI test) and 119 → 129 of 137 (validation).
+- The large jump in disguised spam caught compared with the previous model (UCI 67 → 85 of 90) is **mostly due to the
+  lower threshold**, not to repair alone.
+
+### Confidence calibration
+
+A model is *calibrated* when its confidence matches reality: of the messages it rates "90% spam", about 90% really
+are. Confidence scores are calibrated with **temperature scaling**: one number, T, fitted on the validation set,
+with probability = sigmoid(logit / T). The decision threshold is converted to match, so **no SPAM/HAM decision
+changes** (verified: identical confusion matrices). Only the confidence numbers change.
+
+| Test set | Calibration error (ECE) before → after | Brier score before → after |
+|---|---|---|
+| UCI | 0.0168 → **0.0119** | 0.0188 → **0.0183** |
+| Modern | 0.0728 → 0.0825 | 0.0512 → **0.0474** |
+
+T = 1.55, meaning the model was overconfident overall. Calibration helped on the UCI test set, but the ECE got worse on
+the modern test set. The reliability diagram shows why: on modern messages, the model is *under*confident (messages
+it rates 20–60% are nearly all spam), and a single temperature fitted mostly on UCI-like validation data softens
+confidence in the wrong direction for them. The modern set is also small (195 messages), so its ECE is noisy.
+
+<img src="reports/figures/calibration.png" alt="Reliability diagram" width="760">
+
+### Monitoring for data drift
+
+Spam changes over time, and new messages don't come with correct answers, so accuracy can't be measured live.
+`python -m src.monitor messages.csv` (and a collapsed **Data drift check** after a CSV upload in the app) compares a batch
+of messages with a baseline profile of the validation set, saved with the model, using signals that need no labels:
+share of unknown words, predicted spam rate, share of uncertain predictions and message length.
+
+Example: 6 Spanish messages (3 of them scams) gave a **normal-looking** predicted spam rate (16.7% vs 15.9%), so the
+model's failure would go unnoticed, but the monitor flagged **62.5% unknown words** (baseline 4.4%).
 
 ## Installation
 
@@ -182,7 +296,7 @@ python -m src.download_data     # download the dataset into data/raw/
 python -m src.preprocessing     # clean, de-duplicate and split the data
 python -m src.train             # train the network (about 15 seconds on a laptop CPU)
 python -m src.evaluate          # test-set metrics and charts → reports/
-python -m src.compare_models    # optional: rerun the class-imbalance experiment (validation set)
+python -m src.compare_models    # optional: rerun the v3 model-selection experiment (validation set)
 ```
 
 ### Predict from the command line
@@ -192,6 +306,8 @@ python -m src.predict "WINNER!! You have been selected to receive a £900 prize 
 # SPAM  (confidence 97.7%, spam probability 0.9774)
 
 python -m src.batch samples/labeled_messages.csv predictions.csv
+
+python -m src.monitor samples/labeled_messages.csv   # data-drift check against the validation baseline
 ```
 
 The CSV needs a `message` column (`text`, `sms` or `body` also work). An optional `label` column (spam/ham) enables
@@ -209,19 +325,23 @@ python -m pytest
 ├── app.py                  # Streamlit web app
 ├── src/
 │   ├── config.py           # paths, hyperparameters and settings
-│   ├── download_data.py    # downloads the UCI dataset
-│   ├── preprocessing.py    # cleaning, label encoding, de-duplication, train/val/test split
-│   ├── text_vectorizer.py  # words → integer sequences (fitted on training data only)
-│   ├── model.py            # the neural network, save/load, batch inference
-│   ├── train.py            # reproducible training, early stopping, threshold tuning
-│   ├── compare_models.py   # class-imbalance experiment on the validation set
-│   ├── metrics.py          # accuracy, precision, recall, F1, ROC-AUC, threshold selection
-│   ├── evaluate.py         # test-set evaluation and charts
+│   ├── download_data.py    # downloads both datasets
+│   ├── preprocessing.py    # cleaning, label encoding, de-duplication, stable train/val/test splits
+│   ├── text_vectorizer.py  # words → integer sequences, misspelling repair (fitted on training data only)
+│   ├── model.py            # the neural network (average pooling or 1D CNN), save/load, inference
+│   ├── train.py            # reproducible training, early stopping, threshold tuning, calibration
+│   ├── calibration.py      # temperature scaling
+│   ├── compare_models.py   # model-selection experiments on the validation set
+│   ├── metrics.py          # accuracy, precision, recall, F1, ROC-AUC, calibration error, threshold selection
+│   ├── evaluate.py         # evaluation on both test sets and charts
+│   ├── robustness.py       # disguised-spam robustness check
 │   ├── predict.py          # prediction engine with input validation
 │   ├── link_check.py       # rule-based Link Safety Check (never opens links)
+│   ├── threat_intel.py     # OpenPhish blocklist, RDAP domain age, sender checks
+│   ├── monitor.py          # data-drift monitoring
 │   └── batch.py            # CSV reading, batch classification, label scoring, safe export
-├── tests/                  # 127 pytest tests, including Streamlit UI tests
-├── models/                 # trained weights, vocabulary, config, training history
+├── tests/                  # 195 pytest tests, including Streamlit UI tests
+├── models/                 # trained weights, vocabulary, config, training history, drift baseline
 ├── reports/                # metrics.json and evaluation charts
 ├── samples/                # example CSV files
 ├── docs/                   # report, limitations, deployment guide, demo outline, screenshots
@@ -240,35 +360,33 @@ The project was developed incrementally with Git branches:
   - v1.0: `feature/data-preprocessing`, `feature/neural-network`, `feature/model-evaluation`,
     `feature/prediction-engine`, `feature/streamlit-ui`, `feature/testing-docs`
   - v2.0: `feature/improve-recall`, `feature/link-safety-check`
+  - v3.0: `feature/modern-smishing-data`, `feature/cnn-misspellings`, `feature/calibration-monitoring`,
+    `feature/threat-intel-checks`, `feature/v3-docs`
 
-GitHub Actions runs the full test suite on every pull request into `dev` or `main`. Releases are tagged (`v1.0`).
+GitHub Actions runs the full test suite on every pull request into `dev` or `main`. Releases are tagged
+(`v1.0`, `v2.0`, `v3.0`).
 
 ## Limitations
 
-v1.0 had four main weaknesses. v2 addressed the first two; the others remain:
+Each release tackled the measured weaknesses of the previous one. Current status:
 
-| v1.0 limitation | v2 status |
+| Limitation found earlier | Status in v3.0 |
 |---|---|
-| Missed about 1 in 6 spam messages (recall 84.4%) | **Improved, modestly.** A validation-tuned threshold raised test recall to 85.6% (77 of 90), at the cost of one extra false alarm. Class weighting was tested and didn't help. About 1 in 7 spam messages still gets through. |
-| Couldn't judge links: every URL became the same placeholder word | **Partly addressed.** The new Link Safety Check flags phishing warning signs and caught a parcel-delivery scam that the model labelled HAM. It never visits links and doesn't use blocklists, so "no warning signs" doesn't mean safe. |
-| Ignores word order; fooled by misspellings like "fr33 pr1ze" | Remains (average pooling) |
-| Old 2011 training data; English only; uncalibrated confidence | Remains |
+| Missed about 1 in 6 spam messages (v1.0 recall 84.4%) | **Improved.** UCI test recall is 91.1% (82 of 90) and modern test recall 96.3% (77 of 80), **but** false alarms on the UCI test set rose to 16 of 675 (2.4%) because the validation-tuned threshold is low. |
+| Old 2011 training data | **Partly addressed.** 778 newer messages (Mishra & Soni, 2022) were added, including 180 smishing. Still a small, English-only dataset. |
+| Couldn't judge links | **Addressed with rules and threat intelligence.** The Link Safety Check flags phishing signs; opt-in online checks use the OpenPhish blocklist and domain age. Links are never visited, so "no warning signs" still doesn't mean safe. |
+| Fooled by misspellings like "fr33 pr1ze" | **Improved.** Misspelling repair maps disguised words to known ones; at a fixed threshold, it raised disguised modern spam caught from 69 to 75 of 80. |
+| Ignores word order | **Remains.** A 1D CNN was built and tested, but it didn't beat average pooling on validation, so it isn't used. |
+| Uncalibrated confidence | **Partly addressed.** Temperature scaling improved calibration on the UCI test set but not on the modern test set. |
+| No monitoring | **Addressed (batch level).** Drift monitoring flags unfamiliar messages (e.g. another language) without needing labels. |
+| English only | **Remains.** No vetted multilingual SMS data was used; the drift monitor at least flags other languages. |
 
 Full details, with measured examples: **[docs/limitations.md](docs/limitations.md)**.
-
-## Future improvements
-
-- Train on newer and more diverse data, including modern phishing (smishing) messages and other languages.
-- Try sequence-aware models (LSTM, 1D CNN or a small pre-trained transformer) that understand word order.
-- Add character-level features to resist misspellings.
-- Check links against threat-intelligence blocklists and domain-age data, and add sender checks.
-- Calibrate confidence scores (e.g. temperature scaling) and monitor the model over time.
-- Deploy publicly on Streamlit Community Cloud.
 
 ## Documentation
 
 - [Project report](docs/report.md): what was built, technology choices, problems solved, lessons learned
-- [Limitations](docs/limitations.md): what the model can't do, with measured examples
+- [Limitations](docs/limitations.md): what the model and checks can't do, with measured examples
 - [Deployment guide](docs/deployment.md): Streamlit Community Cloud
 - [Demo outline](docs/presentation.md): five-minute presentation script and recording checklist
 
@@ -277,3 +395,6 @@ Full details, with measured examples: **[docs/limitations.md](docs/limitations.m
 Dataset: T. A. Almeida, J. M. Gómez Hidalgo and A. Yamakami, "Contributions to the Study of SMS Spam Filtering:
 New Collection and Results," *Proceedings of the 2011 ACM Symposium on Document Engineering (DocEng '11)*.
 Available from the [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/228/sms+spam+collection).
+
+Dataset: S. Mishra and D. Soni, "SMS Phishing Dataset for Machine Learning and Pattern Recognition," Mendeley Data,
+V1, 2022, doi: [10.17632/f45bkkt8pr.1](https://doi.org/10.17632/f45bkkt8pr.1). Licensed under CC BY 4.0.
