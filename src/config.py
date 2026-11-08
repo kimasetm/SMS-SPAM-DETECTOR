@@ -17,10 +17,23 @@ RAW_DATA_FILE = RAW_DATA_DIR / "SMSSpamCollection"
 
 TRAIN_FILE = PROCESSED_DATA_DIR / "train.csv"
 VAL_FILE = PROCESSED_DATA_DIR / "val.csv"
-TEST_FILE = PROCESSED_DATA_DIR / "test.csv"
+TEST_FILE = PROCESSED_DATA_DIR / "test.csv"                    # UCI test set (same as v1.0/v2)
+MODERN_TEST_FILE = PROCESSED_DATA_DIR / "test_modern.csv"      # test set of newer messages
 
 # Official UCI download link for the SMS Spam Collection dataset
 DATASET_URL = "https://archive.ics.uci.edu/static/public/228/sms+spam+collection.zip"
+
+# Second, newer dataset: "SMS Phishing Dataset for Machine Learning and Pattern
+# Recognition" by S. Mishra and D. Soni (Mendeley Data, 2022, CC BY 4.0).
+# 5,971 messages labelled ham / spam / smishing. Many overlap with the UCI
+# collection; only messages NOT already in UCI are used.
+MODERN_DATASET_URL = ("https://data.mendeley.com/public-files/datasets/f45bkkt8pr/files/"
+                      "edb361de-918d-469f-9106-e84823830665/file_downloaded")
+MODERN_RAW_FILE = RAW_DATA_DIR / "Dataset_5971.csv"
+# The newer messages are split 60 / 15 / 25: a larger test share gives a more
+# reliable estimate of performance on modern messages.
+MODERN_VAL_SIZE = 0.15
+MODERN_TEST_SIZE = 0.25
 
 # Labels: the model outputs a number, so each class gets an integer
 LABEL_MAP = {"ham": 0, "spam": 1}
@@ -44,7 +57,9 @@ HISTORY_FILE = MODEL_DIR / "training_history.json"       # loss/accuracy per epo
 REPORTS_DIR = PROJECT_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 METRICS_FILE = REPORTS_DIR / "metrics.json"
-BASELINE_METRICS_FILE = REPORTS_DIR / "metrics_v1.json"   # v1.0 results, for before/after comparison
+# Results of the previous release, shown as before/after changes on the dashboard
+BASELINE_METRICS_FILE = REPORTS_DIR / "metrics_v2.json"
+BASELINE_LABEL = "v2"
 MODEL_COMPARISON_FILE = REPORTS_DIR / "model_comparison.json"
 MISCLASSIFIED_FILE = REPORTS_DIR / "misclassified_test_messages.csv"
 

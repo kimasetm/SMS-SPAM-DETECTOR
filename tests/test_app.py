@@ -153,7 +153,9 @@ def test_bad_csv_shows_error(app):
 def test_dashboard_shows_real_metrics_from_file(app):
     """The dashboard must display the saved evaluation results, not hard-coded numbers."""
     test_metrics = json.loads(METRICS_FILE.read_text(encoding="utf-8"))["test"]
-    shown = {m.label: m.value for m in app.metric}
+    shown = {}
+    for m in app.metric:            # the first row of tiles is the UCI test set
+        shown.setdefault(m.label, m.value)
     assert shown["Recall"] == f"{test_metrics['recall']:.2%}"
     assert shown["Accuracy"] == f"{test_metrics['accuracy']:.2%}"
     assert shown["Precision"] == f"{test_metrics['precision']:.2%}"
@@ -161,6 +163,16 @@ def test_dashboard_shows_real_metrics_from_file(app):
     assert shown["F1-score"] == f"{test_metrics['f1']:.3f}"
 
 
-def test_dashboard_shows_change_from_v1(app):
+def test_dashboard_shows_change_from_previous_release(app):
+    from src.config import BASELINE_LABEL
     recall = next(m for m in app.metric if m.label == "Recall")
-    assert "vs v1.0" in recall.delta
+    assert f"vs {BASELINE_LABEL}" in recall.delta
+
+
+def test_dashboard_shows_modern_test_set(app):
+    test_metrics = json.loads(METRICS_FILE.read_text(encoding="utf-8"))
+    if "test_modern" not in test_metrics:
+        pytest.skip("modern test set not evaluated")
+    assert any("Modern test set" in m.value for m in app.markdown)
+    recalls = [m.value for m in app.metric if m.label == "Recall"]
+    assert f"{test_metrics['test_modern']['recall']:.2%}" in recalls

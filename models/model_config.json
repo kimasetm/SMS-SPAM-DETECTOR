@@ -1,9 +1,9 @@
 {
-  "vocab_size": 6314,
+  "vocab_size": 6783,
   "embedding_dim": 32,
   "hidden_dim": 16,
   "dropout": 0.3,
-  "threshold": 0.3,
+  "threshold": 0.75,
   "training": {
     "max_tokens": 10000,
     "sequence_length": 50,
@@ -14,12 +14,12 @@
     "seed": 42,
     "spam_weight": 1.0,
     "tune_threshold": true,
-    "epochs_run": 18,
-    "best_epoch": 15,
-    "best_val_loss": 0.09076196086929418,
-    "best_val_accuracy": 0.9790575916230366,
-    "train_size": 3567,
-    "val_size": 764,
+    "epochs_run": 30,
+    "best_epoch": 30,
+    "best_val_loss": 0.06221200972631633,
+    "best_val_accuracy": 0.9795686719636776,
+    "train_size": 4033,
+    "val_size": 881,
     "torch_version": "2.15.0+cpu"
   }
 }
