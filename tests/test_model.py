@@ -50,6 +50,49 @@ def test_dropout_only_active_in_training_mode():
     assert not torch.equal(first, second)            # random dropout in train mode
 
 
+def make_cnn():
+    torch.manual_seed(0)
+    return SpamClassifier(CONFIG["vocab_size"], CONFIG["embedding_dim"], CONFIG["hidden_dim"],
+                          CONFIG["dropout"], architecture="cnn", conv_filters=6, kernel_size=3)
+
+
+def test_cnn_output_shape_and_empty_message():
+    model = make_cnn().eval()
+    assert model(torch.randint(1, CONFIG["vocab_size"], (4, 10))).shape == (4,)
+    assert torch.isfinite(model(torch.zeros((1, 6), dtype=torch.long))).all()
+
+
+def test_cnn_ignores_padding():
+    model = make_cnn().eval()
+    assert torch.allclose(model(torch.tensor([[3, 7, 5, 0, 0]])), model(torch.tensor([[3, 7, 5, 0, 0, 0, 0, 0]])))
+
+
+def test_word_order_matters_for_cnn_but_not_average_pooling():
+    """The CNN reads neighbouring words together; average pooling treats a message as a bag of words."""
+    forward, reordered = torch.tensor([[3, 7, 5, 9]]), torch.tensor([[9, 5, 7, 3]])
+    avg, cnn = make_model().eval(), make_cnn().eval()
+    assert torch.allclose(avg(forward), avg(reordered))
+    assert not torch.allclose(cnn(forward), cnn(reordered))
+
+
+def test_unknown_architecture_is_rejected():
+    with pytest.raises(ValueError, match="Unknown architecture"):
+        SpamClassifier(10, architecture="transformer")
+
+
+def test_cnn_save_and_load(tmp_path):
+    config = {**CONFIG, "architecture": "cnn", "conv_filters": 6, "kernel_size": 3}
+    model = make_cnn().eval()
+    vectorizer = TextVectorizer(sequence_length=6).fit(["win free prize now", "see you"])
+    paths = {"weights_path": tmp_path / "m.pt", "vectorizer_path": tmp_path / "v.json",
+             "config_path": tmp_path / "c.json"}
+    save_artifacts(model, vectorizer, config, **paths)
+    loaded, _, _ = load_artifacts(**paths)
+    ids = torch.tensor(vectorizer.transform(["win free prize"]))
+    assert loaded.architecture == "cnn"
+    assert torch.equal(loaded(ids), model(ids))
+
+
 def test_save_and_load_gives_identical_predictions(tmp_path):
     model = make_model().eval()
     vectorizer = TextVectorizer(max_tokens=20, sequence_length=6).fit(["win free prize now", "see you"])
