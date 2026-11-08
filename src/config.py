@@ -57,7 +57,9 @@ HISTORY_FILE = MODEL_DIR / "training_history.json"       # loss/accuracy per epo
 REPORTS_DIR = PROJECT_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 METRICS_FILE = REPORTS_DIR / "metrics.json"
-BASELINE_METRICS_FILE = REPORTS_DIR / "metrics_v1.json"   # v1.0 results, for before/after comparison
+# Results of the previous release, shown as before/after changes on the dashboard
+BASELINE_METRICS_FILE = REPORTS_DIR / "metrics_v2.json"
+BASELINE_LABEL = "v2"
 MODEL_COMPARISON_FILE = REPORTS_DIR / "model_comparison.json"
 MISCLASSIFIED_FILE = REPORTS_DIR / "misclassified_test_messages.csv"
 

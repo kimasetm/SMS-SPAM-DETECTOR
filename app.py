@@ -253,6 +253,35 @@ def show_labeled_scores(results, label_column: str, threshold: float) -> None:
 # Model dashboard
 # ---------------------------------------------------------------------------
 
+def show_metric_row(current: dict, base) -> None:
+    """Four metric tiles, each showing the change from the previous release when available."""
+    def change(key, as_percent=True):
+        if not base or base.get(key) is None or base[key] == current[key]:
+            return None
+        diff = current[key] - base[key]
+        label = config.BASELINE_LABEL
+        return f"{diff * 100:+.2f} pts vs {label}" if as_percent else f"{diff:+.4f} vs {label}"
+
+    a, b, c, d = st.columns(4)
+    a.metric("Accuracy", f"{current['accuracy']:.2%}", change("accuracy"),
+             help="Share of all messages classified correctly.")
+    b.metric("Precision", f"{current['precision']:.2%}", change("precision"),
+             help="Of the messages flagged as spam, how many really were spam.")
+    c.metric("Recall", f"{current['recall']:.2%}", change("recall"),
+             help="Of all real spam messages, how many were caught.")
+    d.metric("F1-score", f"{current['f1']:.3f}", change("f1", as_percent=False),
+             help="Balance (harmonic mean) of precision and recall.")
+
+
+def show_counts(current: dict) -> None:
+    cm = current["confusion_matrix"]
+    st.markdown(
+        f"- **{cm['true_negative']:,}** legitimate messages correctly allowed, "
+        f"**{cm['false_positive']:,}** wrongly flagged as spam\n"
+        f"- **{cm['true_positive']:,}** spam messages caught, **{cm['false_negative']:,}** missed"
+    )
+
+
 def show_dashboard(detector: SpamDetector) -> None:
     st.subheader("Model evaluation dashboard")
     metrics = load_metrics()
@@ -261,42 +290,34 @@ def show_dashboard(detector: SpamDetector) -> None:
         return
 
     test = metrics["test"]
-    st.write(f"Results on the **held-out test set**: {test['num_messages']:,} messages "
-             f"({test['num_ham']:,} ham, {test['num_spam']:,} spam) that the model never saw during training.")
-
-    # Show the change from v1.0 (fixed 50% threshold) next to each metric
-    baseline = load_json(config.BASELINE_METRICS_FILE)
-    base = baseline["test"] if baseline else None
-
-    def change(key, as_percent=True):
-        if base is None or base[key] == test[key]:
-            return None
-        diff = test[key] - base[key]
-        return f"{diff * 100:+.2f} pts vs v1.0" if as_percent else f"{diff:+.4f} vs v1.0"
-
-    a, b, c, d = st.columns(4)
-    a.metric("Accuracy", f"{test['accuracy']:.2%}", change("accuracy"),
-             help="Share of all messages classified correctly.")
-    b.metric("Precision", f"{test['precision']:.2%}", change("precision"),
-             help="Of the messages flagged as spam, how many really were spam.")
-    c.metric("Recall", f"{test['recall']:.2%}", change("recall"),
-             help="Of all real spam messages, how many were caught.")
-    d.metric("F1-score", f"{test['f1']:.3f}", change("f1", as_percent=False),
-             help="Balance (harmonic mean) of precision and recall.")
-    if base:
-        st.caption(f"Changes compared with v1.0, which used a fixed 50% spam threshold. v2 uses a "
-                   f"{test['threshold']:.0%} threshold chosen on the validation set to catch more spam.")
-
-    cm = test["confusion_matrix"]
-    st.markdown(
-        f"- **{cm['true_negative']:,}** legitimate messages correctly allowed, "
-        f"**{cm['false_positive']:,}** wrongly flagged as spam\n"
-        f"- **{cm['true_positive']:,}** spam messages caught, **{cm['false_negative']:,}** missed"
-    )
-
+    baseline = load_json(config.BASELINE_METRICS_FILE) or {}
     figures = config.FIGURES_DIR
+
+    st.markdown("#### UCI test set")
+    st.write(f"{test['num_messages']:,} messages ({test['num_ham']:,} ham, {test['num_spam']:,} spam) from the "
+             "original dataset that the model never saw during training.")
+    show_metric_row(test, baseline.get("test"))
+    show_counts(test)
     if (figures / "confusion_matrix.png").exists():
         st.image(str(figures / "confusion_matrix.png"), width=440)
+
+    modern = metrics.get("test_modern")
+    if modern:
+        st.markdown("#### Modern test set")
+        st.write(f"{modern['num_messages']:,} newer messages ({modern['num_ham']:,} ham, {modern['num_spam']:,} "
+                 f"spam, including {modern.get('smishing_count', 0)} smishing / SMS phishing) from the Mishra & "
+                 "Soni (2022) dataset, also never seen during training.")
+        show_metric_row(modern, baseline.get("test_modern"))
+        show_counts(modern)
+        if "smishing_recall" in modern:
+            st.markdown(f"- **{modern['smishing_caught']} of {modern['smishing_count']}** smishing messages "
+                        f"caught ({modern['smishing_recall']:.1%})")
+        if (figures / "confusion_matrix_modern.png").exists():
+            st.image(str(figures / "confusion_matrix_modern.png"), width=440)
+
+    if baseline:
+        st.caption(f"Changes are compared with {config.BASELINE_LABEL}, which was trained on the UCI data only. "
+                   f"The current spam threshold ({test['threshold']:.0%}) was chosen on the validation set.")
     if (figures / "training_history.png").exists():
         st.image(str(figures / "training_history.png"),
                  caption="Training vs validation loss and accuracy per epoch. Training stopped early when "
@@ -326,7 +347,7 @@ def show_dashboard(detector: SpamDetector) -> None:
 
     comparison = load_json(config.MODEL_COMPARISON_FILE)
     if comparison:
-        with st.expander("Experiment: handling class imbalance (validation set)"):
+        with st.expander("v2 experiment: handling class imbalance (UCI validation set)"):
             st.write("Only about 12% of messages are spam. Four approaches were compared on the **validation** "
                      "set, and the one with the highest F1-score was selected (rule fixed before running).")
             st.dataframe(pd.DataFrame(comparison["variants"]).rename(columns={
