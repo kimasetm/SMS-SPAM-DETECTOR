@@ -6,9 +6,13 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-web%20app-ff4b4b)
 
 SmartSpam is a machine learning web application that classifies SMS text messages as **SPAM** or **HAM**
-(legitimate). A PyTorch neural network, trained on the UCI SMS Spam Collection, powers a Streamlit app with a
-message scanner, a rule-based **Link Safety Check** for phishing links, CSV batch classification and a model
-evaluation dashboard.
+(legitimate). A PyTorch neural network, trained on two public SMS datasets including modern smishing (SMS phishing),
+powers a Streamlit app with a message scanner, a **Link Safety Check** with optional threat intelligence, a sender
+check, CSV batch classification with drift monitoring, and a model evaluation dashboard.
+
+The project went through three releases, each driven by measured weaknesses of the previous one:
+**v1.0** (baseline neural network) → **v2.0** (tuned threshold, rule-based link check) → **v3.0** (modern training
+data, misspelling repair, calibrated confidence, drift monitoring, threat-intelligence and sender checks).
 
 > ⚠️ SmartSpam is a text classification project for learning purposes. It is **not** protection against
 > phishing, scams or malware. See [Limitations](#limitations).
@@ -17,7 +21,7 @@ evaluation dashboard.
 
 ## Screenshots
 
-| Message scanner | Link Safety Check catches a scam the model missed |
+| Message scanner with sender check | Link Safety Check on a delivery scam |
 |---|---|
 | ![Message scanner](docs/screenshots/scanner.png) | ![Link Safety Check](docs/screenshots/link_check.png) |
 
@@ -48,15 +52,19 @@ evaluation dashboard.
   codes and sender names (which can be spoofed).
 - **Batch CSV classification:** upload up to 5,000 messages, review the results and download the predictions.
   If the file includes a `label` column, the app also reports accuracy, precision, recall and F1 on your file.
-- **Model evaluation dashboard:** real test-set metrics with the change from v1.0, the confusion matrix, training
-  charts and the class-imbalance experiment.
+  A collapsed **data drift check** warns when the uploaded messages look different from the training data.
+- **Model evaluation dashboard:** metrics on two test sets (original and modern messages) with the change from the
+  previous release, confusion matrices, a calibration chart, training charts and all model-selection experiments.
 - **Trained neural network:** every SPAM/HAM prediction comes from the model; there are no keyword rules. (The
-  Link Safety Check is a separate, clearly labelled rule-based layer.)
-- **Validation-tuned decision threshold:** chosen by a controlled experiment to catch more spam.
+  link and sender checks are separate, clearly labelled rule-based layers.)
+- **Misspelling repair:** disguised or misspelled words ("fr33 pr1ze", "c a s h", "prlze") are mapped to known words.
+- **Calibrated confidence:** temperature scaling so confidence scores better match reality.
+- **Controlled experiments:** the decision threshold, class weighting, a 1D CNN and misspelling repair were compared on
+  the validation set using a selection rule fixed in advance (`python -m src.compare_models`).
 - **Reproducible pipeline:** fixed random seeds, so retraining produces identical weights.
 - **Input validation and safe export:** clear errors for empty, overly long or unreadable input; exported CSVs are
   protected against spreadsheet **formula injection**.
-- **127 automated tests**, run by **GitHub Actions** on every pull request (Python 3.12 and 3.14).
+- **195 automated tests**, run by **GitHub Actions** on every pull request (Python 3.12 and 3.14).
 
 ## Technologies
 
@@ -76,21 +84,26 @@ evaluation dashboard.
 ```
 SMS text
   → clean_text()                 lowercase, decode HTML, replace URLs / phone numbers / prices / numbers
-                                 with placeholder words, remove punctuation
-  → TextVectorizer               words → integer IDs (vocabulary built from training data only),
-                                 padded or truncated to 50 words
-  → Embedding (6,314 × 32)       a learned 32-number vector for each word
+                                 with placeholder words, remove punctuation (digits inside words like "fr33" are kept)
+  → TextVectorizer               words → integer IDs (vocabulary built from training data only), with repair of
+                                 unknown disguised words ("fr33" → "free"); padded or truncated to 50 words
+  → Embedding (6,913 × 32)       a learned 32-number vector for each word
   → Global average pooling       averages the word vectors (ignoring padding) → one vector per message
   → Dropout (0.3)
   → Dense (16, ReLU)
   → Dropout (0.3)
-  → Dense (1) → sigmoid          probability that the message is spam (≥ 0.30 → SPAM; threshold tuned on validation)
+  → Dense (1)                    raw score (logit)
+  → ÷ temperature (1.55) → sigmoid   calibrated probability that the message is spam (≥ 0.19 → SPAM)
 ```
 
-- 202,593 trainable parameters.
+- 221,761 trainable parameters.
 - Training: binary cross-entropy loss, Adam optimizer (learning rate 0.001), batch size 32.
 - **Early stopping:** stops when validation loss hasn't improved for 3 epochs and keeps the best weights.
-  The current model stopped after epoch 18; the best epoch was 15.
+  The current model stopped after epoch 23; the best epoch was 20.
+- **Decision threshold** chosen on the validation set (best F1): 0.10 on the raw probability, which is 0.19 after
+  calibration; calibration doesn't change any decision.
+- A **1D CNN** (Conv1D over 3-word windows) is also implemented (`ARCHITECTURE = "cnn"`), but it didn't beat average
+  pooling in the validation experiment, so it isn't used.
 - The same `clean_text()` and vocabulary are used for training and prediction, so the model always gets input
   in the format it learned from.
 
@@ -157,7 +170,8 @@ the experiment below), **but** the threshold chosen on the validation set (0.10)
 test set rose from 6 to 16 (2.4% of legitimate messages).
 That model was kept because it was selected by a rule fixed before looking at test results; choosing a different
 model *after* seeing them would make the test results unreliable. A more stable way of choosing the threshold is listed
-under future improvements.
+under future improvements. (The 0.10 threshold is on the raw probability; with calibration it's shown as 0.19 in the
+app, and every decision is the same.)
 
 <img src="reports/figures/confusion_matrix.png" alt="Confusion matrix (UCI test set)" width="400"> <img src="reports/figures/confusion_matrix_modern.png" alt="Confusion matrix (modern test set)" width="400">
 
@@ -309,19 +323,23 @@ python -m pytest
 ├── app.py                  # Streamlit web app
 ├── src/
 │   ├── config.py           # paths, hyperparameters and settings
-│   ├── download_data.py    # downloads the UCI dataset
-│   ├── preprocessing.py    # cleaning, label encoding, de-duplication, train/val/test split
-│   ├── text_vectorizer.py  # words → integer sequences (fitted on training data only)
-│   ├── model.py            # the neural network, save/load, batch inference
-│   ├── train.py            # reproducible training, early stopping, threshold tuning
-│   ├── compare_models.py   # class-imbalance experiment on the validation set
-│   ├── metrics.py          # accuracy, precision, recall, F1, ROC-AUC, threshold selection
-│   ├── evaluate.py         # test-set evaluation and charts
+│   ├── download_data.py    # downloads both datasets
+│   ├── preprocessing.py    # cleaning, label encoding, de-duplication, stable train/val/test splits
+│   ├── text_vectorizer.py  # words → integer sequences, misspelling repair (fitted on training data only)
+│   ├── model.py            # the neural network (average pooling or 1D CNN), save/load, inference
+│   ├── train.py            # reproducible training, early stopping, threshold tuning, calibration
+│   ├── calibration.py      # temperature scaling
+│   ├── compare_models.py   # model-selection experiments on the validation set
+│   ├── metrics.py          # accuracy, precision, recall, F1, ROC-AUC, calibration error, threshold selection
+│   ├── evaluate.py         # evaluation on both test sets and charts
+│   ├── robustness.py       # disguised-spam robustness check
 │   ├── predict.py          # prediction engine with input validation
 │   ├── link_check.py       # rule-based Link Safety Check (never opens links)
+│   ├── threat_intel.py     # OpenPhish blocklist, RDAP domain age, sender checks
+│   ├── monitor.py          # data-drift monitoring
 │   └── batch.py            # CSV reading, batch classification, label scoring, safe export
-├── tests/                  # 127 pytest tests, including Streamlit UI tests
-├── models/                 # trained weights, vocabulary, config, training history
+├── tests/                  # 195 pytest tests, including Streamlit UI tests
+├── models/                 # trained weights, vocabulary, config, training history, drift baseline
 ├── reports/                # metrics.json and evaluation charts
 ├── samples/                # example CSV files
 ├── docs/                   # report, limitations, deployment guide, demo outline, screenshots
@@ -340,35 +358,45 @@ The project was developed incrementally with Git branches:
   - v1.0: `feature/data-preprocessing`, `feature/neural-network`, `feature/model-evaluation`,
     `feature/prediction-engine`, `feature/streamlit-ui`, `feature/testing-docs`
   - v2.0: `feature/improve-recall`, `feature/link-safety-check`
+  - v3.0: `feature/modern-smishing-data`, `feature/cnn-misspellings`, `feature/calibration-monitoring`,
+    `feature/threat-intel-checks`, `feature/v3-docs`
 
-GitHub Actions runs the full test suite on every pull request into `dev` or `main`. Releases are tagged (`v1.0`).
+GitHub Actions runs the full test suite on every pull request into `dev` or `main`. Releases are tagged
+(`v1.0`, `v2.0`, `v3.0`).
 
 ## Limitations
 
-v1.0 had four main weaknesses. v2 addressed the first two; the others remain:
+Each release tackled the measured weaknesses of the previous one. Current status:
 
-| v1.0 limitation | v2 status |
+| Limitation found earlier | Status in v3.0 |
 |---|---|
-| Missed about 1 in 6 spam messages (recall 84.4%) | **Improved, modestly.** A validation-tuned threshold raised test recall to 85.6% (77 of 90), at the cost of one extra false alarm. Class weighting was tested and didn't help. About 1 in 7 spam messages still gets through. |
-| Couldn't judge links: every URL became the same placeholder word | **Partly addressed.** The new Link Safety Check flags phishing warning signs and caught a parcel-delivery scam that the model labelled HAM. It never visits links and doesn't use blocklists, so "no warning signs" doesn't mean safe. |
-| Ignores word order; fooled by misspellings like "fr33 pr1ze" | Remains (average pooling) |
-| Old 2011 training data; English only; uncalibrated confidence | Remains |
+| Missed about 1 in 6 spam messages (v1.0 recall 84.4%) | **Improved.** UCI test recall is 91.1% (82 of 90) and modern test recall 96.3% (77 of 80), **but** false alarms on the UCI test set rose to 16 of 675 (2.4%) because the validation-tuned threshold is low. |
+| Old 2011 training data | **Partly addressed.** 778 newer messages (Mishra & Soni, 2022) were added, including 180 smishing. Still a small, English-only dataset. |
+| Couldn't judge links | **Addressed with rules and threat intelligence.** The Link Safety Check flags phishing signs; opt-in online checks use the OpenPhish blocklist and domain age. Links are never visited, so "no warning signs" still doesn't mean safe. |
+| Fooled by misspellings like "fr33 pr1ze" | **Improved.** Misspelling repair maps disguised words to known ones; at a fixed threshold, it raised disguised modern spam caught from 69 to 75 of 80. |
+| Ignores word order | **Remains.** A 1D CNN was built and tested, but it didn't beat average pooling on validation, so it isn't used. |
+| Uncalibrated confidence | **Partly addressed.** Temperature scaling improved calibration on the UCI test set but not on the modern test set. |
+| No monitoring | **Addressed (batch level).** Drift monitoring flags unfamiliar messages (e.g. another language) without needing labels. |
+| English only | **Remains.** No vetted multilingual SMS data was used; the drift monitor at least flags other languages. |
 
 Full details, with measured examples: **[docs/limitations.md](docs/limitations.md)**.
 
 ## Future improvements
 
-- Train on newer and more diverse data, including modern phishing (smishing) messages and other languages.
-- Try sequence-aware models (LSTM, 1D CNN or a small pre-trained transformer) that understand word order.
-- Add character-level features to resist misspellings.
-- Check links against threat-intelligence blocklists and domain-age data, and add sender checks.
-- Calibrate confidence scores (e.g. temperature scaling) and monitor the model over time.
-- Deploy publicly on Streamlit Community Cloud.
+- **A more stable threshold choice** (e.g. cross-validation or a cost-based rule) to reduce the higher false-alarm rate.
+- **More, newer and multilingual training data**, so that larger sequence models (LSTM or a small pre-trained
+  transformer) could show their advantage over average pooling.
+- **Calibration per data source**, since one temperature can't fit both old and modern messages.
+- **Stronger link intelligence**: Google Safe Browsing or URLhaus (API keys kept in Streamlit secrets), certificate
+  checks, and following shortened links in a sandbox.
+- **Continuous monitoring and retraining**: record aggregate drift statistics over time (never message text) and
+  retrain when drift is detected.
+- **Public deployment** on Streamlit Community Cloud (prepared; see [docs/deployment.md](docs/deployment.md)).
 
 ## Documentation
 
 - [Project report](docs/report.md): what was built, technology choices, problems solved, lessons learned
-- [Limitations](docs/limitations.md): what the model can't do, with measured examples
+- [Limitations](docs/limitations.md): what the model and checks can't do, with measured examples
 - [Deployment guide](docs/deployment.md): Streamlit Community Cloud
 - [Demo outline](docs/presentation.md): five-minute presentation script and recording checklist
 

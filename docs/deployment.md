@@ -5,11 +5,15 @@ Streamlit Community Cloud hosts Streamlit apps for free, straight from a GitHub 
 ## What's already prepared
 
 - **`app.py`** is in the repository root (the app's entry point).
-- **The trained model is committed** in `models/`, so the cloud server doesn't need to download the dataset or train.
-- **`requirements.txt`** installs the CPU-only PyTorch build, avoiding about 2 GB of unneeded GPU libraries.
+- **The trained model is committed** in `models/` (weights, vocabulary, calibration temperature, threshold and drift
+  baseline), so the cloud server doesn't need to download the datasets or train.
+- **`requirements.txt`** installs the CPU-only PyTorch build, avoiding about 2 GB of unneeded GPU libraries. It
+  resolves correctly with `uv`, the installer Streamlit Cloud uses (checked for Linux and Python 3.12).
 - **`.streamlit/config.toml`** sets the theme and a 5 MB upload limit. It contains no secrets.
-- **No secrets are needed.** The app uses no API keys, passwords or databases. `.streamlit/secrets.toml` is
-  git-ignored in case one is ever added.
+- **No secrets are needed.** The app uses no API keys, passwords or databases. The optional online link checks use
+  the keyless OpenPhish feed and RDAP. `.streamlit/secrets.toml` is git-ignored in case a key is ever added.
+- **Online link checks** need outbound internet access, which Streamlit Cloud provides. They're off by default for
+  each visitor, and if a service is unreachable the app says so instead of failing.
 
 ## Steps
 
@@ -24,6 +28,15 @@ Streamlit Community Cloud hosts Streamlit apps for free, straight from a GitHub 
 5. Open **Advanced settings** and select **Python 3.12**. Leave **Secrets** empty.
 6. Click **Deploy**. The first build takes a few minutes while PyTorch installs.
 7. Copy the app URL into the README's demo link.
+
+## Checklist after deploying
+
+- [ ] The app opens and shows the three tabs.
+- [ ] **Prize scam** → **Predict** shows SPAM and the premium-rate sender warning.
+- [ ] **Delivery scam** → **Predict** shows SPAM and a high-risk link.
+- [ ] Batch CSV: **Download sample CSV**, upload it, and see "right on 20 of 20".
+- [ ] Model Dashboard shows both test sets and the charts.
+- [ ] Optional: tick **Online link checks** and predict the Delivery scam; it should finish within a few seconds.
 
 ## Updating and troubleshooting
 
