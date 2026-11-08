@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import MaxNLocator
+import pandas as pd
 from sklearn.metrics import classification_report
 
 from src import config
@@ -82,7 +83,7 @@ def plot_training_history(history: dict, path) -> None:
     plt.close(fig)
 
 
-def plot_confusion_matrix(cm: dict, path) -> None:
+def plot_confusion_matrix(cm: dict, path, title: str = "Confusion matrix (test set)") -> None:
     """Confusion matrix. Color shows the share of each true class (row %)."""
     counts = np.array([[cm["true_negative"], cm["false_positive"]],
                        [cm["false_negative"], cm["true_positive"]]])
@@ -113,7 +114,7 @@ def plot_confusion_matrix(cm: dict, path) -> None:
     ax.tick_params(which="minor", length=0)
     for spine in ax.spines.values():
         spine.set_visible(False)
-    ax.set_title("Confusion matrix (test set)", loc="left", fontsize=12, color=INK)
+    ax.set_title(title, loc="left", fontsize=12, color=INK)
 
     fig.tight_layout()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -121,39 +122,69 @@ def plot_confusion_matrix(cm: dict, path) -> None:
     plt.close(fig)
 
 
-def main() -> None:
-    model, vectorizer, model_config = load_artifacts()
-    test_df = load_processed_split(config.TEST_FILE)
+def evaluate_split(name, test_df, model, vectorizer, threshold):
+    """Compute and print metrics for one test set. Returns (metrics, misclassified rows)."""
     texts = test_df["clean_message"].tolist()
     y_true = test_df["label_num"].to_numpy()
-
     y_prob = predict_probabilities(model, vectorizer, texts)
-    # Use the decision threshold chosen on the validation set during training
-    threshold = model_config.get("threshold", config.SPAM_THRESHOLD)
     metrics = compute_metrics(y_true, y_prob, threshold=threshold)
     y_pred = (y_prob >= threshold).astype(int)
 
-    print(f"Test set: {metrics['num_messages']} messages ({metrics['num_spam']} spam)\n")
-    print(classification_report(y_true, y_pred, target_names=["ham", "spam"], digits=4))
+    # Recall for smishing (SMS phishing) on its own, when the test set labels it
+    if "category" in test_df and (test_df["category"] == "smishing").any():
+        is_smishing = (test_df["category"] == "smishing").to_numpy()
+        metrics["smishing_count"] = int(is_smishing.sum())
+        metrics["smishing_caught"] = int(y_pred[is_smishing].sum())
+        metrics["smishing_recall"] = float(y_pred[is_smishing].mean())
+
+    print(f"\n=== {name}: {metrics['num_messages']} messages ({metrics['num_spam']} spam) ===")
+    print(classification_report(y_true, y_pred, target_names=["ham", "spam"], digits=4, zero_division=0))
     cm = metrics["confusion_matrix"]
     print(f"Confusion matrix: TN={cm['true_negative']} FP={cm['false_positive']} "
           f"FN={cm['false_negative']} TP={cm['true_positive']}")
-    print(f"ROC-AUC: {metrics['roc_auc']:.4f}")
+    if metrics["roc_auc"] is not None:
+        print(f"ROC-AUC: {metrics['roc_auc']:.4f}")
+    if "smishing_recall" in metrics:
+        print(f"Smishing caught: {metrics['smishing_caught']} of {metrics['smishing_count']} "
+              f"({metrics['smishing_recall']:.2%})")
 
+    wrong = test_df.assign(spam_probability=y_prob.round(4), predicted=y_pred, test_set=name)[y_pred != y_true]
+    return metrics, wrong.rename(columns={"label_num": "actual"})
+
+
+def main() -> None:
+    model, vectorizer, model_config = load_artifacts()
+    # Use the decision threshold chosen on the validation set during training
+    threshold = model_config.get("threshold", config.SPAM_THRESHOLD)
+
+    test_metrics, wrong = evaluate_split("UCI test set", load_processed_split(config.TEST_FILE),
+                                         model, vectorizer, threshold)
+    report = {"test": test_metrics}
+    all_wrong = [wrong]
+
+    # Newer messages (only if the modern dataset was downloaded and preprocessed)
+    if config.MODERN_TEST_FILE.exists():
+        modern_metrics, modern_wrong = evaluate_split(
+            "Modern test set", load_processed_split(config.MODERN_TEST_FILE), model, vectorizer, threshold)
+        report["test_modern"] = modern_metrics
+        all_wrong.append(modern_wrong)
+
+    report["model"] = {"best_epoch": model_config["training"]["best_epoch"],
+                       "best_val_accuracy": model_config["training"]["best_val_accuracy"]}
     config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    report = {"test": metrics, "model": {"best_epoch": model_config["training"]["best_epoch"],
-                                         "best_val_accuracy": model_config["training"]["best_val_accuracy"]}}
     config.METRICS_FILE.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     # Save the mistakes for error analysis (useful for the report)
-    wrong = test_df.assign(spam_probability=y_prob.round(4), predicted=y_pred)[y_pred != y_true]
-    wrong = wrong.rename(columns={"label_num": "actual"})
-    wrong[["clean_message", "actual", "predicted", "spam_probability"]].to_csv(
-        config.MISCLASSIFIED_FILE, index=False)
+    columns = ["test_set", "clean_message", "actual", "predicted", "spam_probability"]
+    pd.concat(all_wrong)[columns].to_csv(config.MISCLASSIFIED_FILE, index=False)
 
     history = json.loads(config.HISTORY_FILE.read_text(encoding="utf-8"))
     plot_training_history(history, config.FIGURES_DIR / "training_history.png")
-    plot_confusion_matrix(cm, config.FIGURES_DIR / "confusion_matrix.png")
+    plot_confusion_matrix(test_metrics["confusion_matrix"], config.FIGURES_DIR / "confusion_matrix.png")
+    if "test_modern" in report:
+        plot_confusion_matrix(report["test_modern"]["confusion_matrix"],
+                              config.FIGURES_DIR / "confusion_matrix_modern.png",
+                              title="Confusion matrix (modern test set)")
     print(f"\nSaved metrics, misclassified messages and figures to {config.REPORTS_DIR}")
 
 

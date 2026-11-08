@@ -57,6 +57,24 @@ def test_predict_probabilities_returns_one_probability_per_message():
     assert predict_probabilities(model, vectorizer, []).shape == (0,)
 
 
+def test_evaluate_split_reports_smishing_recall():
+    import pandas as pd
+    from src.evaluate import evaluate_split
+
+    torch.manual_seed(0)
+    vectorizer = TextVectorizer(sequence_length=5).fit(["win free prize", "see you soon"])
+    model = SpamClassifier(vectorizer.vocab_size, embedding_dim=4, hidden_dim=2)
+    test_df = pd.DataFrame({"clean_message": ["win prize", "verify account", "see you"],
+                            "label_num": [1, 1, 0], "category": ["spam", "smishing", "ham"]})
+
+    # threshold 0 flags everything as spam, so the one smishing message is caught
+    metrics, wrong = evaluate_split("test", test_df, model, vectorizer, threshold=0.0)
+    assert metrics["smishing_count"] == 1
+    assert metrics["smishing_caught"] == 1
+    assert metrics["smishing_recall"] == 1.0
+    assert wrong["clean_message"].tolist() == ["see you"]   # the ham message was misclassified
+
+
 def test_charts_are_saved(tmp_path):
     history = {"train_loss": [0.5, 0.3, 0.2], "val_loss": [0.6, 0.4, 0.45],
                "train_accuracy": [0.8, 0.9, 0.95], "val_accuracy": [0.75, 0.85, 0.84], "best_epoch": 2}
