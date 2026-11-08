@@ -6,6 +6,12 @@ spam messages and measures how many the model still catches.
 
 The disguised messages are synthetic: they are only used to MEASURE
 robustness, never for training or for choosing a model.
+
+Caveat when reading the results: a disguised word the model can't repair is
+split into letters plus a "numtoken" placeholder ("w33kly" -> "w numtoken kly"),
+and numtoken is itself associated with spam. At a low decision threshold this
+can make disguised spam look EASIER to catch than the original. To compare
+models fairly, compare them at the same threshold.
 """
 
 import numpy as np

@@ -31,6 +31,8 @@ from src.train import train_model
 EXPERIMENTS = {
     "imbalance": {
         "file": config.MODEL_COMPARISON_FILE,
+        # The v2 experiment used the v2 model settings
+        "base": {"architecture": "avg_pool", "max_epochs": 30, "repair_misspellings": False},
         "variants": {
             "v1.0 baseline (no weight, threshold 0.5)": {"spam_weight": None, "tune_threshold": False},
             "No weight, tuned threshold": {"spam_weight": None, "tune_threshold": True},
@@ -40,17 +42,22 @@ EXPERIMENTS = {
     },
     "architecture": {
         "file": config.ARCHITECTURE_COMPARISON_FILE,
+        "base": {"spam_weight": None, "tune_threshold": True},
         "variants": {
-            "Average pooling, 30 epochs (v2 settings)": {"architecture": "avg_pool", "max_epochs": 30},
-            "Average pooling, 60 epochs": {"architecture": "avg_pool", "max_epochs": 60},
+            "Average pooling, 30 epochs (v2 settings)": {"architecture": "avg_pool", "max_epochs": 30,
+                                                         "repair_misspellings": False},
+            "Average pooling, 60 epochs": {"architecture": "avg_pool", "max_epochs": 60,
+                                           "repair_misspellings": False},
             "Average pooling, 60 epochs + misspelling repair": {"architecture": "avg_pool", "max_epochs": 60,
                                                                 "repair_misspellings": True},
-            "1D CNN, 60 epochs": {"architecture": "cnn", "max_epochs": 60},
+            "1D CNN, 60 epochs": {"architecture": "cnn", "max_epochs": 60, "repair_misspellings": False},
             "1D CNN, 60 epochs + misspelling repair": {"architecture": "cnn", "max_epochs": 60,
                                                        "repair_misspellings": True},
         },
     },
 }
+# Every setting an experiment compares is stated explicitly ("base" + variant),
+# so changing the defaults in config.py can't silently change an experiment.
 
 
 def run_experiment(name: str) -> dict:
@@ -62,7 +69,8 @@ def run_experiment(name: str) -> dict:
     val_spam = val_df.loc[val_df["label_num"] == 1, "clean_message"]
 
     rows = []
-    for variant, settings in experiment["variants"].items():
+    for variant, variant_settings in experiment["variants"].items():
+        settings = {**experiment["base"], **variant_settings}
         model, vectorizer, model_config, _ = train_model(
             train_texts, train_labels, val_texts, val_labels, settings, verbose=False)
         threshold = model_config["threshold"]

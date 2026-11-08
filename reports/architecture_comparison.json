@@ -2,6 +2,8 @@
   "selection_rule": "highest validation F1",
   "selected": "Average pooling, 60 epochs + misspelling repair",
   "selected_settings": {
+    "spam_weight": null,
+    "tune_threshold": true,
     "architecture": "avg_pool",
     "max_epochs": 60,
     "repair_misspellings": true
@@ -10,8 +12,11 @@
     {
       "variant": "Average pooling, 30 epochs (v2 settings)",
       "settings": {
+        "spam_weight": null,
+        "tune_threshold": true,
         "architecture": "avg_pool",
-        "max_epochs": 30
+        "max_epochs": 30,
+        "repair_misspellings": false
       },
       "epochs_run": 23,
       "spam_weight": 1.0,
@@ -21,13 +26,16 @@
       "val_f1": 0.9157509157509157,
       "val_spam_caught": 125,
       "val_false_alarms": 11,
-      "val_disguised_spam_recall": 0.9781021897810219
+      "val_disguised_spam_recall": 0.9708029197080292
     },
     {
       "variant": "Average pooling, 60 epochs",
       "settings": {
+        "spam_weight": null,
+        "tune_threshold": true,
         "architecture": "avg_pool",
-        "max_epochs": 60
+        "max_epochs": 60,
+        "repair_misspellings": false
       },
       "epochs_run": 23,
       "spam_weight": 1.0,
@@ -37,11 +45,13 @@
       "val_f1": 0.9157509157509157,
       "val_spam_caught": 125,
       "val_false_alarms": 11,
-      "val_disguised_spam_recall": 0.9781021897810219
+      "val_disguised_spam_recall": 0.9708029197080292
     },
     {
       "variant": "Average pooling, 60 epochs + misspelling repair",
       "settings": {
+        "spam_weight": null,
+        "tune_threshold": true,
         "architecture": "avg_pool",
         "max_epochs": 60,
         "repair_misspellings": true
@@ -54,13 +64,16 @@
       "val_f1": 0.924187725631769,
       "val_spam_caught": 128,
       "val_false_alarms": 12,
-      "val_disguised_spam_recall": 0.9781021897810219
+      "val_disguised_spam_recall": 0.9708029197080292
     },
     {
       "variant": "1D CNN, 60 epochs",
       "settings": {
+        "spam_weight": null,
+        "tune_threshold": true,
         "architecture": "cnn",
-        "max_epochs": 60
+        "max_epochs": 60,
+        "repair_misspellings": false
       },
       "epochs_run": 11,
       "spam_weight": 1.0,
@@ -70,11 +83,13 @@
       "val_f1": 0.9111969111969112,
       "val_spam_caught": 118,
       "val_false_alarms": 4,
-      "val_disguised_spam_recall": 0.8467153284671532
+      "val_disguised_spam_recall": 0.7883211678832117
     },
     {
       "variant": "1D CNN, 60 epochs + misspelling repair",
       "settings": {
+        "spam_weight": null,
+        "tune_threshold": true,
         "architecture": "cnn",
         "max_epochs": 60,
         "repair_misspellings": true
@@ -87,7 +102,7 @@
       "val_f1": 0.9029850746268657,
       "val_spam_caught": 121,
       "val_false_alarms": 10,
-      "val_disguised_spam_recall": 0.9343065693430657
+      "val_disguised_spam_recall": 0.9124087591240876
     }
   ]
 }
