@@ -1,0 +1,93 @@
+{
+  "selection_rule": "highest validation F1",
+  "selected": "Average pooling, 60 epochs + misspelling repair",
+  "selected_settings": {
+    "architecture": "avg_pool",
+    "max_epochs": 60,
+    "repair_misspellings": true
+  },
+  "variants": [
+    {
+      "variant": "Average pooling, 30 epochs (v2 settings)",
+      "settings": {
+        "architecture": "avg_pool",
+        "max_epochs": 30
+      },
+      "epochs_run": 23,
+      "spam_weight": 1.0,
+      "threshold": 0.1,
+      "val_precision": 0.9191176470588235,
+      "val_recall": 0.9124087591240876,
+      "val_f1": 0.9157509157509157,
+      "val_spam_caught": 125,
+      "val_false_alarms": 11,
+      "val_disguised_spam_recall": 0.9781021897810219
+    },
+    {
+      "variant": "Average pooling, 60 epochs",
+      "settings": {
+        "architecture": "avg_pool",
+        "max_epochs": 60
+      },
+      "epochs_run": 23,
+      "spam_weight": 1.0,
+      "threshold": 0.1,
+      "val_precision": 0.9191176470588235,
+      "val_recall": 0.9124087591240876,
+      "val_f1": 0.9157509157509157,
+      "val_spam_caught": 125,
+      "val_false_alarms": 11,
+      "val_disguised_spam_recall": 0.9781021897810219
+    },
+    {
+      "variant": "Average pooling, 60 epochs + misspelling repair",
+      "settings": {
+        "architecture": "avg_pool",
+        "max_epochs": 60,
+        "repair_misspellings": true
+      },
+      "epochs_run": 23,
+      "spam_weight": 1.0,
+      "threshold": 0.1,
+      "val_precision": 0.9142857142857143,
+      "val_recall": 0.9343065693430657,
+      "val_f1": 0.924187725631769,
+      "val_spam_caught": 128,
+      "val_false_alarms": 12,
+      "val_disguised_spam_recall": 0.9781021897810219
+    },
+    {
+      "variant": "1D CNN, 60 epochs",
+      "settings": {
+        "architecture": "cnn",
+        "max_epochs": 60
+      },
+      "epochs_run": 11,
+      "spam_weight": 1.0,
+      "threshold": 0.45,
+      "val_precision": 0.9672131147540983,
+      "val_recall": 0.8613138686131386,
+      "val_f1": 0.9111969111969112,
+      "val_spam_caught": 118,
+      "val_false_alarms": 4,
+      "val_disguised_spam_recall": 0.8467153284671532
+    },
+    {
+      "variant": "1D CNN, 60 epochs + misspelling repair",
+      "settings": {
+        "architecture": "cnn",
+        "max_epochs": 60,
+        "repair_misspellings": true
+      },
+      "epochs_run": 10,
+      "spam_weight": 1.0,
+      "threshold": 0.4,
+      "val_precision": 0.9236641221374046,
+      "val_recall": 0.8832116788321168,
+      "val_f1": 0.9029850746268657,
+      "val_spam_caught": 121,
+      "val_false_alarms": 10,
+      "val_disguised_spam_recall": 0.9343065693430657
+    }
+  ]
+}

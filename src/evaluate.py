@@ -28,6 +28,7 @@ from sklearn.metrics import classification_report
 from src import config
 from src.metrics import compute_metrics
 from src.model import load_artifacts, predict_probabilities
+from src.robustness import disguised_spam_recall
 from src.preprocessing import load_processed_split
 
 # Chart colors (validated for color-blind readers)
@@ -147,6 +148,14 @@ def evaluate_split(name, test_df, model, vectorizer, threshold):
     if "smishing_recall" in metrics:
         print(f"Smishing caught: {metrics['smishing_caught']} of {metrics['smishing_count']} "
               f"({metrics['smishing_recall']:.2%})")
+
+    # Robustness: the same spam messages with words disguised ("free" -> "fr33")
+    robust = disguised_spam_recall(model, vectorizer, test_df.loc[test_df["label_num"] == 1, "clean_message"],
+                                   threshold)
+    metrics["disguised_spam"] = robust
+    if robust["count"]:
+        print(f"Disguised spam still caught: {robust['caught_disguised']} of {robust['count']} "
+              f"({robust['recall_disguised']:.2%}; undisguised: {robust['caught_original']})")
 
     wrong = test_df.assign(spam_probability=y_prob.round(4), predicted=y_pred, test_set=name)[y_pred != y_true]
     return metrics, wrong.rename(columns={"label_num": "actual"})

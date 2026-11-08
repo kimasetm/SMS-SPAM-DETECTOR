@@ -60,7 +60,8 @@ METRICS_FILE = REPORTS_DIR / "metrics.json"
 # Results of the previous release, shown as before/after changes on the dashboard
 BASELINE_METRICS_FILE = REPORTS_DIR / "metrics_v2.json"
 BASELINE_LABEL = "v2"
-MODEL_COMPARISON_FILE = REPORTS_DIR / "model_comparison.json"
+MODEL_COMPARISON_FILE = REPORTS_DIR / "model_comparison.json"            # v2 class-imbalance experiment
+ARCHITECTURE_COMPARISON_FILE = REPORTS_DIR / "architecture_comparison.json"   # v3 architecture experiment
 MISCLASSIFIED_FILE = REPORTS_DIR / "misclassified_test_messages.csv"
 
 # Default decision threshold: a message is spam when its probability is >= this.
@@ -72,7 +73,15 @@ SPAM_THRESHOLD = 0.5
 MAX_TOKENS = 10000       # maximum vocabulary size
 SEQUENCE_LENGTH = 50     # words per message (covers >95% of training messages)
 
+# --- Character-level repair of unknown words ("fr33" -> "free") ---
+# Selected by the v3 architecture experiment (python -m src.compare_models)
+REPAIR_MISSPELLINGS = True
+
 # --- Neural network architecture ---
+# The v3 experiment compared both; the CNN did not improve validation F1
+ARCHITECTURE = "avg_pool"   # "avg_pool" (bag of words) or "cnn" (reads 3-word phrases)
+CONV_FILTERS = 64        # CNN only: number of phrase detectors
+KERNEL_SIZE = 3          # CNN only: words per window
 EMBEDDING_DIM = 32       # size of the learned vector for each word
 HIDDEN_DIM = 16          # neurons in the hidden dense layer
 DROPOUT = 0.3            # fraction of neurons randomly switched off during training
@@ -80,7 +89,7 @@ DROPOUT = 0.3            # fraction of neurons randomly switched off during trai
 # --- Training ---
 BATCH_SIZE = 32          # messages per weight update
 LEARNING_RATE = 0.001    # step size for the Adam optimizer
-MAX_EPOCHS = 30          # upper limit on passes over the training data
+MAX_EPOCHS = 60          # upper limit on passes over the training data (early stopping usually ends sooner)
 EARLY_STOPPING_PATIENCE = 3   # stop after this many epochs without validation improvement
 
 # --- Handling class imbalance (only ~12% of messages are spam) ---

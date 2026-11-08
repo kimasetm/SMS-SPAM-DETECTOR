@@ -41,6 +41,10 @@ DEFAULT_SETTINGS = {
     "seed": config.RANDOM_SEED,
     "spam_weight": config.SPAM_WEIGHT,
     "tune_threshold": config.TUNE_THRESHOLD,
+    "architecture": config.ARCHITECTURE,
+    "conv_filters": config.CONV_FILTERS,
+    "kernel_size": config.KERNEL_SIZE,
+    "repair_misspellings": config.REPAIR_MISSPELLINGS,
 }
 
 
@@ -109,7 +113,8 @@ def train_model(train_texts, train_labels, val_texts, val_labels,
     set_seed(settings["seed"])
 
     # Fit the vocabulary on TRAINING data only (prevents data leakage)
-    vectorizer = TextVectorizer(settings["max_tokens"], settings["sequence_length"])
+    vectorizer = TextVectorizer(settings["max_tokens"], settings["sequence_length"],
+                                settings["repair_misspellings"])
     vectorizer.fit(train_texts)
 
     train_loader = make_loader(vectorizer.transform(train_texts), train_labels,
@@ -122,7 +127,11 @@ def train_model(train_texts, train_labels, val_texts, val_labels,
         "embedding_dim": settings["embedding_dim"],
         "hidden_dim": settings["hidden_dim"],
         "dropout": settings["dropout"],
+        "architecture": settings["architecture"],
     }
+    if settings["architecture"] == "cnn":
+        model_config["conv_filters"] = settings["conv_filters"]
+        model_config["kernel_size"] = settings["kernel_size"]
     model = build_model(model_config)
 
     # Binary cross-entropy loss: measures how far the predicted spam
@@ -181,7 +190,8 @@ def train_model(train_texts, train_labels, val_texts, val_labels,
     history["best_epoch"] = best_epoch
     model_config["training"] = {
         **{k: settings[k] for k in ("max_tokens", "sequence_length", "batch_size",
-                                    "learning_rate", "max_epochs", "patience", "seed")},
+                                    "learning_rate", "max_epochs", "patience", "seed",
+                                    "repair_misspellings")},
         "spam_weight": spam_weight,
         "tune_threshold": settings["tune_threshold"],
         "epochs_run": len(history["train_loss"]),
