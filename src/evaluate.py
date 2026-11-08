@@ -128,8 +128,10 @@ def main() -> None:
     y_true = test_df["label_num"].to_numpy()
 
     y_prob = predict_probabilities(model, vectorizer, texts)
-    metrics = compute_metrics(y_true, y_prob)
-    y_pred = (y_prob >= config.SPAM_THRESHOLD).astype(int)
+    # Use the decision threshold chosen on the validation set during training
+    threshold = model_config.get("threshold", config.SPAM_THRESHOLD)
+    metrics = compute_metrics(y_true, y_prob, threshold=threshold)
+    y_pred = (y_prob >= threshold).astype(int)
 
     print(f"Test set: {metrics['num_messages']} messages ({metrics['num_spam']} spam)\n")
     print(classification_report(y_true, y_pred, target_names=["ham", "spam"], digits=4))

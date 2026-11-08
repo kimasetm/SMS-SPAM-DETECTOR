@@ -89,10 +89,10 @@ def show_scanner(detector: SpamDetector) -> None:
 
     result = st.session_state.get("last_result")
     if result is not None:
-        show_result(result)
+        show_result(result, detector.threshold)
 
 
-def show_result(result) -> None:
+def show_result(result, threshold: float) -> None:
     confidence = format_confidence(result.confidence)
     if result.is_spam:
         st.error(f"### 🚫 SPAM\nThe model predicts this message is **spam** "
@@ -103,8 +103,12 @@ def show_result(result) -> None:
 
     st.progress(result.spam_probability,
                 text=f"Spam probability: {result.spam_probability:.1%} "
-                     f"(messages at {config.SPAM_THRESHOLD:.0%} or above are labelled spam)")
-    if 0.35 <= result.spam_probability <= 0.65:
+                     f"(messages at {threshold:.0%} or above are labelled spam)")
+    if result.is_spam and result.spam_probability < 0.5:
+        st.info(f"Flagged because its spam probability is above the {threshold:.0%} cutoff. The cutoff was "
+                "lowered from 50% to catch more spam, so borderline messages like this one are flagged. "
+                "Treat the result with caution.", icon="ℹ️")
+    elif abs(result.spam_probability - threshold) <= 0.15:
         st.info("The model is uncertain about this message. Treat the result with caution.", icon="ℹ️")
 
     with st.expander("What did the model see?"):
@@ -171,13 +175,13 @@ def show_batch(detector: SpamDetector) -> None:
                        file_name=output_name, mime="text/csv", type="primary")
 
     if label_column:
-        show_labeled_scores(results, label_column)
+        show_labeled_scores(results, label_column, detector.threshold)
 
 
-def show_labeled_scores(results, label_column: str) -> None:
+def show_labeled_scores(results, label_column: str, threshold: float) -> None:
     """Score predictions against the labels in the uploaded file."""
     st.subheader("How accurate was the model on this file?")
-    scored = score_labeled_results(results, label_column)
+    scored = score_labeled_results(results, label_column, threshold)
     if scored is None:
         st.warning(f"The **{label_column}** column was found, but none of its values could be read. "
                    "Use **spam** or **ham** for each row.", icon="⚠️")

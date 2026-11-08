@@ -94,10 +94,13 @@ def make_result(spam_probability: float, cleaned_text: str,
 class SpamDetector:
     """Loads the trained model once and classifies messages with it."""
 
-    def __init__(self, threshold: float = config.SPAM_THRESHOLD, **artifact_paths):
+    def __init__(self, threshold: float = None, **artifact_paths):
         # artifact_paths lets tests point to a different model; normally the
         # files in models/ are used.
         self.model, self.vectorizer, self.model_config = load_artifacts(**artifact_paths)
+        # Use the threshold chosen on the validation set during training
+        if threshold is None:
+            threshold = self.model_config.get("threshold", config.SPAM_THRESHOLD)
         self.threshold = threshold
 
     def predict(self, message: str) -> PredictionResult:
