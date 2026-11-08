@@ -44,9 +44,13 @@ HISTORY_FILE = MODEL_DIR / "training_history.json"       # loss/accuracy per epo
 REPORTS_DIR = PROJECT_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 METRICS_FILE = REPORTS_DIR / "metrics.json"
+BASELINE_METRICS_FILE = REPORTS_DIR / "metrics_v1.json"   # v1.0 results, for before/after comparison
+MODEL_COMPARISON_FILE = REPORTS_DIR / "model_comparison.json"
 MISCLASSIFIED_FILE = REPORTS_DIR / "misclassified_test_messages.csv"
 
-# A message is classified as spam when the predicted probability is >= this value
+# Default decision threshold: a message is spam when its probability is >= this.
+# Training now chooses a better threshold on the validation set and saves it
+# in model_config.json; this value is only used if a model has none saved.
 SPAM_THRESHOLD = 0.5
 
 # --- Text vectorization ---
@@ -63,3 +67,12 @@ BATCH_SIZE = 32          # messages per weight update
 LEARNING_RATE = 0.001    # step size for the Adam optimizer
 MAX_EPOCHS = 30          # upper limit on passes over the training data
 EARLY_STOPPING_PATIENCE = 3   # stop after this many epochs without validation improvement
+
+# --- Handling class imbalance (only ~12% of messages are spam) ---
+# How much more a mistake on a spam message counts during training:
+#   None      = all messages count equally (v1.0 behavior)
+#   "sqrt"    = square root of the ham/spam ratio (moderate boost)
+#   "balanced"= the full ham/spam ratio (spam and ham count equally in total)
+SPAM_WEIGHT = None
+# Choose the decision threshold that maximizes F1 on the validation set
+TUNE_THRESHOLD = True

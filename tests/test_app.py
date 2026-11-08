@@ -69,6 +69,35 @@ def test_example_button_fills_text_box(app):
     assert app.success   # predicted as HAM
 
 
+def test_delivery_scam_link_is_flagged_even_when_model_says_ham(app):
+    click(app, "Delivery scam")
+    click(app, "Predict")
+    assert not app.exception
+    assert any("Link Safety Check" in m.value for m in app.markdown)
+    assert any("High risk" in e.value and "parcel-redelivery.info" in e.value for e in app.error)
+    if app.success:   # the model rated the text as HAM
+        assert any("link shows warning signs" in w.value for w in app.warning)
+
+
+def test_safe_link_shows_no_warning_signs(app):
+    app.text_area(key="message_input").input("Here are the photos https://www.google.com/photos").run()
+    click(app, "Predict")
+    assert any("No warning signs found" in s.value for s in app.success)
+
+
+def test_message_without_links_has_no_link_section(app):
+    click(app, "Family")
+    click(app, "Predict")
+    assert not any("Link Safety Check" in m.value for m in app.markdown)
+
+
+def test_link_check_uses_the_predicted_message_not_later_edits(app):
+    click(app, "Delivery scam")
+    click(app, "Predict")
+    app.text_area(key="message_input").input("edited text without links").run()
+    assert any("parcel-redelivery.info" in e.value for e in app.error)
+
+
 def test_unreadable_input_shows_validation_message(app):
     app.text_area(key="message_input").input("!!! ???").run()
     click(app, "Predict")
@@ -85,7 +114,9 @@ def test_csv_upload_shows_summary_and_download(app):
     metrics = {m.label: m.value for m in app.metric}
     assert metrics["Messages"] == "12"
     assert int(metrics["Spam"]) + int(metrics["Ham"]) + int(metrics["Invalid"]) == 12
-    assert len(app.dataframe) == 1
+    results_table = app.dataframe[0].value   # the batch tab's table comes first on the page
+    assert list(results_table.columns[:3]) == ["Message", "Prediction", "Confidence"]
+    assert len(results_table) == 12
 
 
 def test_unlabelled_csv_has_no_accuracy_section(app):
@@ -123,7 +154,13 @@ def test_dashboard_shows_real_metrics_from_file(app):
     """The dashboard must display the saved evaluation results, not hard-coded numbers."""
     test_metrics = json.loads(METRICS_FILE.read_text(encoding="utf-8"))["test"]
     shown = {m.label: m.value for m in app.metric}
+    assert shown["Recall"] == f"{test_metrics['recall']:.2%}"
     assert shown["Accuracy"] == f"{test_metrics['accuracy']:.2%}"
     assert shown["Precision"] == f"{test_metrics['precision']:.2%}"
     assert shown["Recall"] == f"{test_metrics['recall']:.2%}"
     assert shown["F1-score"] == f"{test_metrics['f1']:.3f}"
+
+
+def test_dashboard_shows_change_from_v1(app):
+    recall = next(m for m in app.metric if m.label == "Recall")
+    assert "vs v1.0" in recall.delta

@@ -7,7 +7,8 @@
 
 SmartSpam is a machine learning web application that classifies SMS text messages as **SPAM** or **HAM**
 (legitimate). A PyTorch neural network, trained on the UCI SMS Spam Collection, powers a Streamlit app with a
-message scanner, CSV batch classification and a model evaluation dashboard.
+message scanner, a rule-based **Link Safety Check** for phishing links, CSV batch classification and a model
+evaluation dashboard.
 
 > ⚠️ SmartSpam is a text classification project for learning purposes. It is **not** protection against
 > phishing, scams or malware. See [Limitations](#limitations).
@@ -16,9 +17,15 @@ message scanner, CSV batch classification and a model evaluation dashboard.
 
 ## Screenshots
 
-| Message scanner | Batch CSV with accuracy check |
+| Message scanner | Link Safety Check catches a scam the model missed |
 |---|---|
-| ![Message scanner](docs/screenshots/scanner.png) | ![Batch CSV](docs/screenshots/batch.png) |
+| ![Message scanner](docs/screenshots/scanner.png) | ![Link Safety Check](docs/screenshots/link_check.png) |
+
+<details>
+<summary><b>Batch CSV with accuracy check</b></summary>
+
+![Batch CSV](docs/screenshots/batch.png)
+</details>
 
 <details>
 <summary><b>Model evaluation dashboard</b></summary>
@@ -30,14 +37,20 @@ message scanner, CSV batch classification and a model evaluation dashboard.
 
 - **Message scanner:** paste a message and get SPAM or HAM with a confidence score, a spam-probability bar,
   example messages, an empty-input warning, and a view of the cleaned text the model actually reads.
+- **Link Safety Check:** flags phishing warning signs in any links (raw IP addresses, the `@` trick, punycode
+  look-alikes, brand names on unofficial domains, link shorteners, abused domain endings, phishing words, plain
+  `http`), without ever opening them. It warns when the AI rates the text as legitimate but the link is risky.
 - **Batch CSV classification:** upload up to 5,000 messages, review the results and download the predictions.
   If the file includes a `label` column, the app also reports accuracy, precision, recall and F1 on your file.
-- **Model evaluation dashboard:** real test-set metrics, the confusion matrix and training charts.
-- **Trained neural network:** every prediction comes from the model; there are no keyword rules.
+- **Model evaluation dashboard:** real test-set metrics with the change from v1.0, the confusion matrix, training
+  charts and the class-imbalance experiment.
+- **Trained neural network:** every SPAM/HAM prediction comes from the model; there are no keyword rules. (The
+  Link Safety Check is a separate, clearly labelled rule-based layer.)
+- **Validation-tuned decision threshold:** chosen by a controlled experiment to catch more spam.
 - **Reproducible pipeline:** fixed random seeds, so retraining produces identical weights.
 - **Input validation and safe export:** clear errors for empty, overly long or unreadable input; exported CSVs are
   protected against spreadsheet **formula injection**.
-- **86 automated tests**, run by **GitHub Actions** on every pull request (Python 3.12 and 3.14).
+- **127 automated tests**, run by **GitHub Actions** on every pull request (Python 3.12 and 3.14).
 
 ## Technologies
 
@@ -65,7 +78,7 @@ SMS text
   → Dropout (0.3)
   → Dense (16, ReLU)
   → Dropout (0.3)
-  → Dense (1) → sigmoid          probability that the message is spam (≥ 0.5 → SPAM)
+  → Dense (1) → sigmoid          probability that the message is spam (≥ 0.30 → SPAM; threshold tuned on validation)
 ```
 
 - 202,593 trainable parameters.
@@ -100,19 +113,41 @@ The dataset isn't stored in this repository; `python -m src.download_data` downl
 
 Measured on the **held-out test set**: 765 messages (675 ham, 90 spam) that weren't used for training or model selection.
 
-| Metric | Value |
-|---|---|
-| Accuracy | **97.65%** |
-| Precision (spam) | **95.00%**: of the messages flagged as spam, 95% were spam |
-| Recall (spam) | **84.44%**: the model caught 76 of the 90 spam messages |
-| F1-score (spam) | **0.8941** |
-| ROC-AUC | **0.9863** |
+| Metric | v1.0 (threshold 0.50) | **v2 (threshold 0.30)** |
+|---|---|---|
+| Accuracy | 97.65% | **97.65%** |
+| Precision (spam) | 95.00% | **93.90%** |
+| Recall (spam) | 84.44% (76 of 90 caught) | **85.56%** (77 of 90 caught) |
+| F1-score (spam) | 0.8941 | **0.8953** |
+| False alarms | 4 of 675 | 5 of 675 |
+| ROC-AUC | 0.9863 | 0.9863 |
 
 <img src="reports/figures/confusion_matrix.png" alt="Confusion matrix" width="420">
 
-The model rarely raises false alarms (4 of 675 legitimate messages flagged), but it misses about 1 in 6 spam
-messages. Because only ~12% of messages are spam, accuracy alone is misleading: labelling everything "ham" would
-score 88%. That's why precision, recall and F1 are reported. Full results are in [`reports/metrics.json`](reports/metrics.json).
+Because only ~12% of messages are spam, accuracy alone is misleading: labelling everything "ham" would score 88%.
+That's why precision, recall and F1 are reported. Full results are in [`reports/metrics.json`](reports/metrics.json)
+(v1.0: [`reports/metrics_v1.json`](reports/metrics_v1.json)).
+
+### Improving spam recall: experiment
+
+v1.0 missed about 1 in 6 spam messages. To fix this, four ways of handling the class imbalance were compared using
+**only the validation set**, with a selection rule fixed before running: highest validation F1
+(`python -m src.compare_models`).
+
+| Variant (validation set, 89 spam) | Threshold | Precision | Recall | F1 |
+|---|---|---|---|---|
+| v1.0 baseline (no weighting) | 0.50 | 97.40% | 84.27% | 0.9036 |
+| **No weighting, threshold tuned on validation** ✅ | **0.30** | 94.12% | **89.89%** | **0.9195** |
+| Moderate spam weighting (√ ham/spam ratio) | 0.68 | 96.30% | 87.64% | 0.9176 |
+| Full spam weighting (ham/spam ratio) | 0.89 | 96.15% | 84.27% | 0.8982 |
+
+**Findings:** weighting spam more heavily during training did *not* beat simply lowering the decision threshold.
+On the test set, the gain was smaller than on validation (+1 spam caught rather than +5), at the cost of one extra
+false alarm. With only 90 test spam messages, one message is about one percentage point of recall, so the
+improvement is modest. The network's weights are unchanged; only the threshold moved.
+
+Note: the test set was first used to evaluate v1.0. All v2 choices were made on the validation set, and the test set
+was used once more only to report the final result.
 
 ## Installation
 
@@ -147,6 +182,7 @@ python -m src.download_data     # download the dataset into data/raw/
 python -m src.preprocessing     # clean, de-duplicate and split the data
 python -m src.train             # train the network (about 15 seconds on a laptop CPU)
 python -m src.evaluate          # test-set metrics and charts → reports/
+python -m src.compare_models    # optional: rerun the class-imbalance experiment (validation set)
 ```
 
 ### Predict from the command line
@@ -177,12 +213,14 @@ python -m pytest
 │   ├── preprocessing.py    # cleaning, label encoding, de-duplication, train/val/test split
 │   ├── text_vectorizer.py  # words → integer sequences (fitted on training data only)
 │   ├── model.py            # the neural network, save/load, batch inference
-│   ├── train.py            # reproducible training with early stopping
-│   ├── metrics.py          # accuracy, precision, recall, F1, ROC-AUC, confusion matrix
+│   ├── train.py            # reproducible training, early stopping, threshold tuning
+│   ├── compare_models.py   # class-imbalance experiment on the validation set
+│   ├── metrics.py          # accuracy, precision, recall, F1, ROC-AUC, threshold selection
 │   ├── evaluate.py         # test-set evaluation and charts
 │   ├── predict.py          # prediction engine with input validation
+│   ├── link_check.py       # rule-based Link Safety Check (never opens links)
 │   └── batch.py            # CSV reading, batch classification, label scoring, safe export
-├── tests/                  # 86 pytest tests, including Streamlit UI tests
+├── tests/                  # 127 pytest tests, including Streamlit UI tests
 ├── models/                 # trained weights, vocabulary, config, training history
 ├── reports/                # metrics.json and evaluation charts
 ├── samples/                # example CSV files
@@ -198,31 +236,33 @@ The project was developed incrementally with Git branches:
 
 - `main`: stable releases
 - `dev`: integration branch where finished features are combined and tested
-- Feature branches cut from `dev` and merged back by pull request: `feature/data-preprocessing`, `feature/neural-network`,
-  `feature/model-evaluation`, `feature/prediction-engine`, `feature/streamlit-ui`, `feature/testing-docs`
+- Feature branches cut from `dev` and merged back by pull request:
+  - v1.0: `feature/data-preprocessing`, `feature/neural-network`, `feature/model-evaluation`,
+    `feature/prediction-engine`, `feature/streamlit-ui`, `feature/testing-docs`
+  - v2.0: `feature/improve-recall`, `feature/link-safety-check`
 
-GitHub Actions runs the full test suite on every pull request into `dev` or `main`.
+GitHub Actions runs the full test suite on every pull request into `dev` or `main`. Releases are tagged (`v1.0`).
 
 ## Limitations
 
-SmartSpam reads only the **words** of a message, learned from data collected around 2011. Key limitations:
+v1.0 had four main weaknesses. v2 addressed the first two; the others remain:
 
-- It misses about 1 in 6 spam messages on the test set, and handles modern scams poorly. For example, it labelled a
-  parcel-delivery phishing text as HAM.
-- It can't inspect links, senders or attachments; every URL becomes the same placeholder word.
-- It ignores word order and can be fooled by misspellings like "fr33 pr1ze".
-- It only understands English, and its confidence scores aren't calibrated.
+| v1.0 limitation | v2 status |
+|---|---|
+| Missed about 1 in 6 spam messages (recall 84.4%) | **Improved, modestly.** A validation-tuned threshold raised test recall to 85.6% (77 of 90), at the cost of one extra false alarm. Class weighting was tested and didn't help. About 1 in 7 spam messages still gets through. |
+| Couldn't judge links: every URL became the same placeholder word | **Partly addressed.** The new Link Safety Check flags phishing warning signs and caught a parcel-delivery scam that the model labelled HAM. It never visits links and doesn't use blocklists, so "no warning signs" doesn't mean safe. |
+| Ignores word order; fooled by misspellings like "fr33 pr1ze" | Remains (average pooling) |
+| Old 2011 training data; English only; uncalibrated confidence | Remains |
 
 Full details, with measured examples: **[docs/limitations.md](docs/limitations.md)**.
 
 ## Future improvements
 
-- Improve spam recall with class weighting, and tune the decision threshold on the validation set.
 - Train on newer and more diverse data, including modern phishing (smishing) messages and other languages.
 - Try sequence-aware models (LSTM, 1D CNN or a small pre-trained transformer) that understand word order.
 - Add character-level features to resist misspellings.
-- Combine text classification with URL reputation and sender checks, as real spam filters do.
-- Calibrate confidence scores and monitor the model over time.
+- Check links against threat-intelligence blocklists and domain-age data, and add sender checks.
+- Calibrate confidence scores (e.g. temperature scaling) and monitor the model over time.
 - Deploy publicly on Streamlit Community Cloud.
 
 ## Documentation
