@@ -275,11 +275,14 @@ def show_metric_row(current: dict, base) -> None:
 
 def show_counts(current: dict) -> None:
     cm = current["confusion_matrix"]
-    st.markdown(
-        f"- **{cm['true_negative']:,}** legitimate messages correctly allowed, "
-        f"**{cm['false_positive']:,}** wrongly flagged as spam\n"
-        f"- **{cm['true_positive']:,}** spam messages caught, **{cm['false_negative']:,}** missed"
-    )
+    lines = (f"- **{cm['true_negative']:,}** legitimate messages correctly allowed, "
+             f"**{cm['false_positive']:,}** wrongly flagged as spam\n"
+             f"- **{cm['true_positive']:,}** spam messages caught, **{cm['false_negative']:,}** missed")
+    disguised = current.get("disguised_spam")
+    if disguised and disguised["count"]:
+        lines += (f"\n- **{disguised['caught_disguised']} of {disguised['count']}** spam messages still caught "
+                  "when words are disguised (\"free\" → \"fr33\")")
+    st.markdown(lines)
 
 
 def show_dashboard(detector: SpamDetector) -> None:
@@ -326,14 +329,17 @@ def show_dashboard(detector: SpamDetector) -> None:
     with st.expander("Model architecture and training details"):
         mc = detector.model_config
         training = mc["training"]
+        pooling = ("`Conv1D` (3-word windows) → global max pooling" if mc.get("architecture") == "cnn"
+                   else "global average pooling")
         st.markdown(
             f"""
 **Architecture (PyTorch):** text → `TextVectorizer` → `Embedding({mc['vocab_size']:,} × {mc['embedding_dim']})`
-→ global average pooling → `Dropout({mc['dropout']})` → `Dense({mc['hidden_dim']}, ReLU)`
+→ {pooling} → `Dropout({mc['dropout']})` → `Dense({mc['hidden_dim']}, ReLU)`
 → `Dropout({mc['dropout']})` → `Dense(1)` → sigmoid
 
 | Setting | Value |
 |---|---|
+| Misspelling repair ("fr33" → "free") | {"on" if detector.vectorizer.repair_misspellings else "off"} |
 | Vocabulary size (training data only) | {mc['vocab_size']:,} words |
 | Sequence length | {training['sequence_length']} words |
 | Training / validation messages | {training['train_size']:,} / {training['val_size']:,} |
@@ -345,20 +351,39 @@ def show_dashboard(detector: SpamDetector) -> None:
 """
         )
 
-    comparison = load_json(config.MODEL_COMPARISON_FILE)
-    if comparison:
-        with st.expander("v2 experiment: handling class imbalance (UCI validation set)"):
-            st.write("Only about 12% of messages are spam. Four approaches were compared on the **validation** "
-                     "set, and the one with the highest F1-score was selected (rule fixed before running).")
-            st.dataframe(pd.DataFrame(comparison["variants"]).rename(columns={
-                "variant": "Variant", "spam_weight": "Spam weight", "threshold": "Threshold",
-                "val_precision": "Precision", "val_recall": "Recall", "val_f1": "F1",
-                "val_spam_caught": "Spam caught", "val_false_alarms": "False alarms"}),
-                hide_index=True, width="stretch",
-                column_config={"Precision": st.column_config.NumberColumn(format="percent"),
-                               "Recall": st.column_config.NumberColumn(format="percent"),
-                               "F1": st.column_config.NumberColumn(format="%.4f")})
-            st.caption(f"Selected: {comparison['selected']}.")
+    show_experiment(config.ARCHITECTURE_COMPARISON_FILE,
+                    "v3 experiment: architecture and misspelling repair (validation set)",
+                    "Average pooling and a 1D CNN, with and without misspelling repair, were compared on the "
+                    "**validation** set; the highest F1-score was selected (rule fixed before running). "
+                    "'Disguised' is the share of validation spam still caught when words are disguised "
+                    "(for information only).")
+    show_experiment(config.MODEL_COMPARISON_FILE,
+                    "v2 experiment: handling class imbalance (UCI validation set)",
+                    "Only about 12% of messages are spam. Four approaches were compared on the **validation** "
+                    "set, and the one with the highest F1-score was selected (rule fixed before running).")
+
+
+EXPERIMENT_COLUMNS = {
+    "variant": "Variant", "threshold": "Threshold", "val_precision": "Precision", "val_recall": "Recall",
+    "val_f1": "F1", "val_spam_caught": "Spam caught", "val_false_alarms": "False alarms",
+    "val_disguised_spam_recall": "Disguised",
+}
+
+
+def show_experiment(path, title: str, description: str) -> None:
+    comparison = load_json(path)
+    if not comparison:
+        return
+    with st.expander(title):
+        st.write(description)
+        table = pd.DataFrame(comparison["variants"])
+        table = table[[c for c in EXPERIMENT_COLUMNS if c in table]].rename(columns=EXPERIMENT_COLUMNS)
+        st.dataframe(table, hide_index=True, width="stretch", column_config={
+            "Precision": st.column_config.NumberColumn(format="percent"),
+            "Recall": st.column_config.NumberColumn(format="percent"),
+            "Disguised": st.column_config.NumberColumn(format="percent"),
+            "F1": st.column_config.NumberColumn(format="%.4f")})
+        st.caption(f"Selected: {comparison['selected']}.")
 
 
 # ---------------------------------------------------------------------------
