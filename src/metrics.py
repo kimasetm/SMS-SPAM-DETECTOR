@@ -1,0 +1,48 @@
+"""Classification metrics, shared by test-set evaluation and the web app."""
+
+import numpy as np
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+
+from src import config
+
+
+def compute_metrics(y_true, y_prob, threshold: float = config.SPAM_THRESHOLD) -> dict:
+    """Compute classification metrics. Spam (1) is the "positive" class.
+
+    - accuracy:  share of all messages classified correctly
+    - precision: of the messages flagged as spam, how many really were spam
+                 (low precision = real messages wrongly blocked)
+    - recall:    of the real spam messages, how many were caught
+                 (low recall = spam slipping through)
+    - F1:        the balance (harmonic mean) of precision and recall
+    - ROC-AUC:   how well the probabilities rank spam above ham, across all thresholds
+    """
+    y_true = np.asarray(y_true)
+    y_pred = (np.asarray(y_prob) >= threshold).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+
+    return {
+        "threshold": threshold,
+        "num_messages": int(len(y_true)),
+        "num_spam": int(y_true.sum()),
+        "num_ham": int(len(y_true) - y_true.sum()),
+        "accuracy": float(accuracy_score(y_true, y_pred)),
+        "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_true, y_pred, zero_division=0)),
+        "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+        # ROC-AUC is undefined when only one class is present
+        "roc_auc": float(roc_auc_score(y_true, y_prob)) if len(set(y_true.tolist())) == 2 else None,
+        "confusion_matrix": {
+            "true_negative": int(tn),    # ham correctly kept
+            "false_positive": int(fp),   # ham wrongly flagged as spam
+            "false_negative": int(fn),   # spam that slipped through
+            "true_positive": int(tp),    # spam correctly caught
+        },
+    }

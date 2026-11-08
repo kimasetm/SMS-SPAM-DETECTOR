@@ -1,123 +1,104 @@
 # SmartSpam — SMS Spam Detection System
 
 [![Tests](https://github.com/kimasetm/SMS-SPAM-DETECTOR/actions/workflows/tests.yml/badge.svg)](https://github.com/kimasetm/SMS-SPAM-DETECTOR/actions/workflows/tests.yml)
+![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.14-blue)
+![PyTorch](https://img.shields.io/badge/PyTorch-neural%20network-ee4c2c)
+![Streamlit](https://img.shields.io/badge/Streamlit-web%20app-ff4b4b)
 
-A machine learning web application that classifies SMS messages as **SPAM** or **HAM** (legitimate).
-The model is a PyTorch neural network trained on the
-[UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+collection) dataset.
+SmartSpam is a machine learning web application that classifies SMS text messages as **SPAM** or **HAM**
+(legitimate). A PyTorch neural network, trained on the UCI SMS Spam Collection, powers a Streamlit app with a
+message scanner, CSV batch classification and a model evaluation dashboard.
 
-> Project under development. Completed so far: data preprocessing, the neural network, model evaluation, the prediction engine and the web app.
+> ⚠️ SmartSpam is a text classification project for learning purposes. It is **not** protection against
+> phishing, scams or malware. See [Limitations](#limitations).
 
-## Project structure
+**Live demo:** not deployed yet. See [docs/deployment.md](docs/deployment.md) to deploy it on Streamlit Community Cloud.
 
-```
-├── app.py                  # Streamlit web app
-├── .github/workflows/      # CI: runs tests on pull requests
-├── .streamlit/config.toml  # app theme and upload limit (no secrets)
-├── data/
-│   ├── raw/                # SMSSpamCollection (downloaded, not stored in git)
-│   └── processed/          # train.csv, val.csv, test.csv (generated)
-├── models/                 # trained weights, vocabulary, config, training history
-├── reports/                # metrics.json and figures/ (evaluation charts)
-├── samples/                # example CSV for batch classification
-├── docs/                   # deployment guide
-├── src/
-│   ├── config.py           # shared paths, hyperparameters and settings
-│   ├── download_data.py    # downloads the UCI dataset
-│   ├── preprocessing.py    # cleaning, label encoding, train/val/test split
-│   ├── text_vectorizer.py  # converts text into integer sequences for the model
-│   ├── model.py            # the neural network + save/load helpers
-│   ├── train.py            # training pipeline with early stopping
-│   ├── evaluate.py         # test-set metrics, confusion matrix, charts
-│   ├── predict.py          # prediction engine: message → SPAM/HAM + confidence
-│   └── batch.py            # CSV batch classification and safe export
-├── tests/                  # pytest unit tests
-└── requirements.txt
-```
+## Screenshots
 
-## Setup
+| Message scanner | Batch CSV with accuracy check |
+|---|---|
+| ![Message scanner](docs/screenshots/scanner.png) | ![Batch CSV](docs/screenshots/batch.png) |
 
-Requires Python 3.10 or newer.
+<details>
+<summary><b>Model evaluation dashboard</b></summary>
 
-```bash
-# 1. Create and activate a virtual environment
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-source .venv/bin/activate       # macOS / Linux
+![Model dashboard](docs/screenshots/dashboard.png)
+</details>
 
-# 2. Install dependencies
-pip install -r requirements.txt
-```
+## Features
 
-## Get and prepare the data
+- **Message scanner:** paste a message and get SPAM or HAM with a confidence score, a spam-probability bar,
+  example messages, an empty-input warning, and a view of the cleaned text the model actually reads.
+- **Batch CSV classification:** upload up to 5,000 messages, review the results and download the predictions.
+  If the file includes a `label` column, the app also reports accuracy, precision, recall and F1 on your file.
+- **Model evaluation dashboard:** real test-set metrics, the confusion matrix and training charts.
+- **Trained neural network:** every prediction comes from the model; there are no keyword rules.
+- **Reproducible pipeline:** fixed random seeds, so retraining produces identical weights.
+- **Input validation and safe export:** clear errors for empty, overly long or unreadable input; exported CSVs are
+  protected against spreadsheet **formula injection**.
+- **86 automated tests**, run by **GitHub Actions** on every pull request (Python 3.12 and 3.14).
 
-```bash
-# Download the dataset into data/raw/
-python -m src.download_data
+## Technologies
 
-# Clean the messages and create the train / validation / test splits
-python -m src.preprocessing
-```
-
-If the download fails, download the zip manually from the
-[UCI page](https://archive.ics.uci.edu/dataset/228/sms+spam+collection),
-and place the `SMSSpamCollection` file from it in `data/raw/`.
-
-### What preprocessing does
-
-1. **Cleans** each message: lowercase, decode HTML entities, replace URLs, emails, phone numbers,
-   currency symbols and numbers with placeholder words (`urltoken`, `phonetoken`, …), and remove punctuation.
-2. **Encodes labels**: `ham → 0`, `spam → 1`.
-3. **Removes duplicates** (478 duplicate or empty messages) so the same message can't appear in both training and test data.
-4. **Splits** the data 70% / 15% / 15% into training, validation and test sets, keeping the same spam ratio (~12%) in each.
-
-The vocabulary used by the model is built **only from the training set**, to prevent data leakage.
+| Area | Tools |
+|---|---|
+| Language | Python |
+| Neural network | PyTorch |
+| Data processing | pandas, NumPy |
+| Evaluation | scikit-learn |
+| Charts | Matplotlib |
+| Web app | Streamlit |
+| Testing and CI | pytest, Streamlit AppTest, GitHub Actions |
+| Version control | Git, GitHub (feature branches and pull requests) |
 
 ## Machine learning architecture
 
 ```
 SMS text
-  → clean_text()                 lowercase, placeholder tokens, remove punctuation
-  → TextVectorizer               words → integer IDs, padded/truncated to 50
+  → clean_text()                 lowercase, decode HTML, replace URLs / phone numbers / prices / numbers
+                                 with placeholder words, remove punctuation
+  → TextVectorizer               words → integer IDs (vocabulary built from training data only),
+                                 padded or truncated to 50 words
   → Embedding (6,314 × 32)       a learned 32-number vector for each word
-  → Global average pooling       average of the word vectors (padding ignored) → 1 vector per message
+  → Global average pooling       averages the word vectors (ignoring padding) → one vector per message
   → Dropout (0.3)
   → Dense (16, ReLU)
   → Dropout (0.3)
-  → Dense (1) → sigmoid          probability that the message is spam
+  → Dense (1) → sigmoid          probability that the message is spam (≥ 0.5 → SPAM)
 ```
 
-Built with PyTorch (`src/model.py`); 202,593 trainable parameters.
-The project brief allowed TensorFlow/Keras or PyTorch. PyTorch was chosen because TensorFlow did not
-provide packages for Python 3.14, the development environment's Python version.
-`TextVectorizer` and the masked average pooling are the PyTorch counterparts of Keras'
-`TextVectorization` and `GlobalAveragePooling1D` layers.
+- 202,593 trainable parameters.
+- Training: binary cross-entropy loss, Adam optimizer (learning rate 0.001), batch size 32.
+- **Early stopping:** stops when validation loss hasn't improved for 3 epochs and keeps the best weights.
+  The current model stopped after epoch 18; the best epoch was 15.
+- The same `clean_text()` and vocabulary are used for training and prediction, so the model always gets input
+  in the format it learned from.
 
-## Train the model
-
-```bash
-python -m src.train
-```
-
-- Loss: binary cross-entropy · Optimizer: Adam (learning rate 0.001) · Batch size: 32
-- **Early stopping:** training stops when validation loss hasn't improved for 3 epochs, and the best epoch's weights are kept.
-- **Reproducible:** all random seeds are fixed, so retraining on the same machine produces identical weights.
-- The **test set is not used during training**; it's reserved for final evaluation.
-
-The trained model is saved in `models/` (`spam_classifier.pt`, `vectorizer.json`, `model_config.json`,
-`training_history.json`). These files are committed, so the app can run without retraining.
-In the current run, training stopped after epoch 18; the best epoch was 15, with a validation accuracy of 97.91%.
+The project brief allowed TensorFlow/Keras or PyTorch. PyTorch was chosen because TensorFlow didn't provide packages
+for Python 3.14, the development environment. `TextVectorizer` and masked average pooling are the PyTorch
+counterparts of Keras' `TextVectorization` and `GlobalAveragePooling1D`.
 
 ![Training history](reports/figures/training_history.png)
 
+## Dataset
+
+[UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+collection) by Almeida, Gómez Hidalgo
+and Yamakami (2011): 5,574 English SMS messages labelled ham or spam.
+
+| Step | Result |
+|---|---|
+| Raw messages | 5,574 (about 13% spam) |
+| After removing duplicate and empty messages | 5,096 (478 removed) |
+| Training / validation / test split (stratified 70 / 15 / 15) | 3,567 / 764 / 765 |
+
+**Preventing data leakage:** duplicates are removed *before* splitting, so no message appears in both training and
+test data; the vocabulary is built from the training set only; and the test set is used once, for final evaluation.
+The dataset isn't stored in this repository; `python -m src.download_data` downloads it.
+
 ## Evaluation results
 
-```bash
-python -m src.evaluate
-```
-
-Measured on the **held-out test set** (765 messages: 675 ham, 90 spam), which was not used during
-training or model selection. Spam is the positive class; threshold = 0.5.
+Measured on the **held-out test set**: 765 messages (675 ham, 90 spam) that weren't used for training or model selection.
 
 | Metric | Value |
 |---|---|
@@ -129,70 +110,130 @@ training or model selection. Spam is the positive class; threshold = 0.5.
 
 <img src="reports/figures/confusion_matrix.png" alt="Confusion matrix" width="420">
 
-**What the results mean:** the model is cautious. It wrongly flagged only 4 of 675 legitimate
-messages (0.6%), but it missed 14 of 90 spam messages (15.6%). Most missed spam messages read like
-ordinary conversation or ads without typical spam words (e.g. *"for sale arsenal dartboard good condition"*).
-Because only ~12% of messages are spam, accuracy alone is misleading: a model that labels everything
-"ham" would still score 88%. That's why precision, recall and F1 are reported.
+The model rarely raises false alarms (4 of 675 legitimate messages flagged), but it misses about 1 in 6 spam
+messages. Because only ~12% of messages are spam, accuracy alone is misleading: labelling everything "ham" would
+score 88%. That's why precision, recall and F1 are reported. Full results are in [`reports/metrics.json`](reports/metrics.json).
 
-Full results are saved in [`reports/metrics.json`](reports/metrics.json). Running the evaluation also writes
-`reports/misclassified_test_messages.csv` locally for error analysis. It isn't committed, because it contains raw dataset text.
+## Installation
 
-## Run the web app
+Requires Python 3.10 or newer.
+
+```bash
+git clone https://github.com/kimasetm/SMS-SPAM-DETECTOR.git
+cd SMS-SPAM-DETECTOR
+
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+source .venv/bin/activate       # macOS / Linux
+
+pip install -r requirements.txt
+```
+
+The trained model is included in `models/`, so you can run the app right away.
+
+## Usage
+
+### Run the web app
 
 ```bash
 streamlit run app.py
 ```
+Then open <http://localhost:8501>.
 
-Then open <http://localhost:8501>. The app has three tabs:
+### Train and evaluate the model
 
-- **🔍 Message Scanner:** type or paste a message (or click an example) and click **Predict** to see
-  **SPAM** or **HAM**, the confidence and the spam probability. A warning appears for empty input.
-- **📄 Batch CSV:** upload a CSV of messages, see summary counts and a results table, and download the predictions.
-- **📊 Model Dashboard:** test-set accuracy, precision, recall and F1, plus the confusion matrix, training charts
-  and model details, all read from `reports/`.
+```bash
+python -m src.download_data     # download the dataset into data/raw/
+python -m src.preprocessing     # clean, de-duplicate and split the data
+python -m src.train             # train the network (about 15 seconds on a laptop CPU)
+python -m src.evaluate          # test-set metrics and charts → reports/
+```
 
-Every prediction comes from the trained neural network; there are no keyword rules.
-See [docs/deployment.md](docs/deployment.md) to deploy the app to Streamlit Community Cloud.
+### Predict from the command line
 
-## Make predictions
-
-**One message (command line):**
 ```bash
 python -m src.predict "WINNER!! You have been selected to receive a £900 prize reward! Call 09061701461"
 # SPAM  (confidence 97.7%, spam probability 0.9774)
+
+python -m src.batch samples/labeled_messages.csv predictions.csv
 ```
 
-**From Python:**
-```python
-from src.predict import predict_message
+The CSV needs a `message` column (`text`, `sms` or `body` also work). An optional `label` column (spam/ham) enables
+accuracy scoring. Limits: 5 MB and 5,000 rows.
 
-result = predict_message("Are we still meeting for lunch tomorrow?")
-result.label             # "HAM"
-result.confidence        # probability of the predicted label (0.5–1.0)
-result.spam_probability  # model output: 0 = ham, 1 = spam
-```
-
-**Many messages from a CSV file:**
-```bash
-python -m src.batch samples/sample_messages.csv predictions.csv
-# Classified 12 messages: 5 spam, 6 ham, 1 invalid
-```
-The CSV needs a column named `message`, `text`, `sms` or `body` (or just a single column). Limits: 5 MB and 5,000 rows.
-The output adds `prediction`, `confidence`, `spam_probability` and `error` columns.
-Rows that can't be classified, such as empty messages, are marked `INVALID` instead of stopping the whole file.
-
-**How it works:** every message goes through the same `clean_text()` → `TextVectorizer` steps used in training,
-so the model always gets input in the format it learned from. The model is loaded once and reused.
-Input is validated (empty, non-text, too long, no readable words). Exported CSVs are protected against
-**CSV formula injection**: cells starting with `=`, `+`, `-` or `@` are escaped, so spreadsheet programs
-don't run them as formulas.
-
-## Run tests
+### Run the tests
 
 ```bash
 python -m pytest
 ```
 
-Tests also run automatically with GitHub Actions (`.github/workflows/tests.yml`) on every pull request
-into `dev` or `main`, on Python 3.12 and 3.14.
+## Project structure
+
+```
+├── app.py                  # Streamlit web app
+├── src/
+│   ├── config.py           # paths, hyperparameters and settings
+│   ├── download_data.py    # downloads the UCI dataset
+│   ├── preprocessing.py    # cleaning, label encoding, de-duplication, train/val/test split
+│   ├── text_vectorizer.py  # words → integer sequences (fitted on training data only)
+│   ├── model.py            # the neural network, save/load, batch inference
+│   ├── train.py            # reproducible training with early stopping
+│   ├── metrics.py          # accuracy, precision, recall, F1, ROC-AUC, confusion matrix
+│   ├── evaluate.py         # test-set evaluation and charts
+│   ├── predict.py          # prediction engine with input validation
+│   └── batch.py            # CSV reading, batch classification, label scoring, safe export
+├── tests/                  # 86 pytest tests, including Streamlit UI tests
+├── models/                 # trained weights, vocabulary, config, training history
+├── reports/                # metrics.json and evaluation charts
+├── samples/                # example CSV files
+├── docs/                   # report, limitations, deployment guide, demo outline, screenshots
+├── data/                   # dataset (downloaded, not committed)
+├── .github/workflows/      # CI: tests on every pull request
+└── .streamlit/config.toml  # app theme and upload limit (no secrets)
+```
+
+## Development workflow
+
+The project was developed incrementally with Git branches:
+
+- `main`: stable releases
+- `dev`: integration branch where finished features are combined and tested
+- Feature branches cut from `dev` and merged back by pull request: `feature/data-preprocessing`, `feature/neural-network`,
+  `feature/model-evaluation`, `feature/prediction-engine`, `feature/streamlit-ui`, `feature/testing-docs`
+
+GitHub Actions runs the full test suite on every pull request into `dev` or `main`.
+
+## Limitations
+
+SmartSpam reads only the **words** of a message, learned from data collected around 2011. Key limitations:
+
+- It misses about 1 in 6 spam messages on the test set, and handles modern scams poorly. For example, it labelled a
+  parcel-delivery phishing text as HAM.
+- It can't inspect links, senders or attachments; every URL becomes the same placeholder word.
+- It ignores word order and can be fooled by misspellings like "fr33 pr1ze".
+- It only understands English, and its confidence scores aren't calibrated.
+
+Full details, with measured examples: **[docs/limitations.md](docs/limitations.md)**.
+
+## Future improvements
+
+- Improve spam recall with class weighting, and tune the decision threshold on the validation set.
+- Train on newer and more diverse data, including modern phishing (smishing) messages and other languages.
+- Try sequence-aware models (LSTM, 1D CNN or a small pre-trained transformer) that understand word order.
+- Add character-level features to resist misspellings.
+- Combine text classification with URL reputation and sender checks, as real spam filters do.
+- Calibrate confidence scores and monitor the model over time.
+- Deploy publicly on Streamlit Community Cloud.
+
+## Documentation
+
+- [Project report](docs/report.md): what was built, technology choices, problems solved, lessons learned
+- [Limitations](docs/limitations.md): what the model can't do, with measured examples
+- [Deployment guide](docs/deployment.md): Streamlit Community Cloud
+- [Demo outline](docs/presentation.md): five-minute presentation script and recording checklist
+
+## Acknowledgments
+
+Dataset: T. A. Almeida, J. M. Gómez Hidalgo and A. Yamakami, "Contributions to the Study of SMS Spam Filtering:
+New Collection and Results," *Proceedings of the 2011 ACM Symposium on Document Engineering (DocEng '11)*.
+Available from the [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/228/sms+spam+collection).

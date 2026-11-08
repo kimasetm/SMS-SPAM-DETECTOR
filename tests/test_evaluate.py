@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 import torch
 
-from src.evaluate import compute_metrics, plot_confusion_matrix, plot_training_history
+from src.evaluate import plot_confusion_matrix, plot_training_history
+from src.metrics import compute_metrics
 from src.model import SpamClassifier, predict_probabilities
 from src.text_vectorizer import TextVectorizer
 
