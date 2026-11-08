@@ -23,6 +23,10 @@ from sklearn.model_selection import train_test_split
 
 from src.config import (
     LABEL_MAP,
+    MODERN_RAW_FILE,
+    MODERN_TEST_FILE,
+    MODERN_TEST_SIZE,
+    MODERN_VAL_SIZE,
     PROCESSED_DATA_DIR,
     RANDOM_SEED,
     RAW_DATA_FILE,
@@ -112,22 +116,22 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def split_data(df: pd.DataFrame):
-    """Split into train / validation / test sets (70 / 15 / 15).
+def split_data(df: pd.DataFrame, val_size: float = VAL_SIZE, test_size: float = TEST_SIZE):
+    """Split into train / validation / test sets (70 / 15 / 15 by default).
 
     stratify=... keeps the same ham/spam ratio in every split. This matters
     because only about 1 in 8 messages is spam.
     """
     train_df, temp_df = train_test_split(
         df,
-        test_size=VAL_SIZE + TEST_SIZE,
+        test_size=val_size + test_size,
         stratify=df["label_num"],
         random_state=RANDOM_SEED,
     )
-    # Split the remaining 30% in half: 15% validation, 15% test
+    # Split the remainder into validation and test
     val_df, test_df = train_test_split(
         temp_df,
-        test_size=TEST_SIZE / (VAL_SIZE + TEST_SIZE),
+        test_size=test_size / (val_size + test_size),
         stratify=temp_df["label_num"],
         random_state=RANDOM_SEED,
     )
@@ -136,6 +140,39 @@ def split_data(df: pd.DataFrame):
         val_df.reset_index(drop=True),
         test_df.reset_index(drop=True),
     )
+
+
+def load_modern_data(path=MODERN_RAW_FILE) -> pd.DataFrame:
+    """Read the Mishra & Soni dataset as columns 'label' (ham/spam), 'category' and 'message'.
+
+    Its labels are ham, spam and smishing (SMS phishing). Smishing is a kind of
+    spam, so both become "spam" for the model; 'category' keeps the original
+    label so results can be reported for smishing separately.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"Dataset not found at {path}. Run: python -m src.download_data")
+    raw = pd.read_csv(path, encoding="utf-8", dtype=str, keep_default_na=False)
+    category = raw["LABEL"].str.strip().str.lower()
+    unknown = set(category) - {"ham", "spam", "smishing"}
+    if unknown:
+        raise ValueError(f"Unknown labels in modern dataset: {unknown}")
+    return pd.DataFrame({
+        "label": category.replace({"smishing": "spam"}),
+        "category": category,
+        "message": raw["TEXT"],
+    })
+
+
+def prepare_modern_dataframe(modern_df: pd.DataFrame, existing_clean_messages) -> pd.DataFrame:
+    """Clean the newer messages and keep only those NOT already in the UCI data.
+
+    Many messages in this dataset were copied from the UCI collection. Keeping
+    them would duplicate data and could put the same message in both training
+    and test sets, so any message whose cleaned text appears anywhere in the
+    UCI data is removed.
+    """
+    df = prepare_dataframe(modern_df)
+    return df[~df["clean_message"].isin(set(existing_clean_messages))].reset_index(drop=True)
 
 
 def load_processed_split(path) -> pd.DataFrame:
@@ -151,29 +188,49 @@ def load_processed_split(path) -> pd.DataFrame:
 
 def describe_split(name: str, df: pd.DataFrame) -> None:
     spam = int(df["label_num"].sum())
-    print(f"  {name:<10} {len(df):>5} messages | spam: {spam:>4} ({spam / len(df):.1%})")
+    print(f"  {name:<14} {len(df):>5} messages | spam: {spam:>4} ({spam / len(df):.1%})")
 
 
 def main() -> None:
+    # --- 1. UCI SMS Spam Collection (split exactly as in v1.0/v2) ---
     raw_df = load_raw_data()
-    print(f"Loaded {len(raw_df)} raw messages")
+    print(f"UCI: loaded {len(raw_df)} raw messages")
+    uci = prepare_dataframe(raw_df).assign(source="uci")
+    uci["category"] = uci["label"]
+    print(f"UCI: {len(uci)} after removing duplicates/empty rows ({len(raw_df) - len(uci)} removed)")
+    uci_train, uci_val, uci_test = split_data(uci)
 
-    df = prepare_dataframe(raw_df)
-    print(f"After cleaning and removing duplicates/empty rows: {len(df)} messages "
-          f"({len(raw_df) - len(df)} removed)")
+    # --- 2. Newer messages (Mishra & Soni, 2022), if downloaded ---
+    if MODERN_RAW_FILE.exists():
+        modern_raw = load_modern_data()
+        modern = prepare_modern_dataframe(modern_raw, uci["clean_message"]).assign(source="modern")
+        print(f"Modern: loaded {len(modern_raw)} messages; {len(modern)} are new "
+              f"(not in UCI, no duplicates) — {(modern['category'] == 'smishing').sum()} smishing")
+        mod_train, mod_val, mod_test = split_data(modern, MODERN_VAL_SIZE, MODERN_TEST_SIZE)
+    else:
+        print(f"Modern dataset not found at {MODERN_RAW_FILE}; using UCI data only. "
+              "Run: python -m src.download_data")
+        mod_train = mod_val = mod_test = uci.iloc[0:0]
 
-    train_df, val_df, test_df = split_data(df)
+    # Training and validation use both sources. Test sets are kept separate so
+    # UCI results stay comparable with earlier versions.
+    train_df = pd.concat([uci_train, mod_train], ignore_index=True)
+    val_df = pd.concat([uci_val, mod_val], ignore_index=True)
 
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    columns = ["clean_message", "label_num"]
+    columns = ["clean_message", "label_num", "source", "category"]
     train_df[columns].to_csv(TRAIN_FILE, index=False)
     val_df[columns].to_csv(VAL_FILE, index=False)
-    test_df[columns].to_csv(TEST_FILE, index=False)
+    uci_test[columns].to_csv(TEST_FILE, index=False)
+    if len(mod_test):
+        mod_test[columns].to_csv(MODERN_TEST_FILE, index=False)
 
     print("Saved splits:")
     describe_split("train", train_df)
     describe_split("validation", val_df)
-    describe_split("test", test_df)
+    describe_split("test (UCI)", uci_test)
+    if len(mod_test):
+        describe_split("test (modern)", mod_test)
 
 
 if __name__ == "__main__":

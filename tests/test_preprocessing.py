@@ -7,7 +7,13 @@ Run from the project root:
 import pandas as pd
 import pytest
 
-from src.preprocessing import clean_text, prepare_dataframe, split_data
+from src.preprocessing import (
+    clean_text,
+    load_modern_data,
+    prepare_dataframe,
+    prepare_modern_dataframe,
+    split_data,
+)
 from src.text_vectorizer import OOV_ID, PAD_ID, TextVectorizer
 
 
@@ -97,6 +103,46 @@ def test_splits_do_not_overlap():
     assert not train_msgs & val_msgs
     assert not train_msgs & test_msgs
     assert not val_msgs & test_msgs
+
+
+# ---------- modern (Mishra & Soni) dataset ----------
+
+def write_modern_csv(tmp_path, rows):
+    path = tmp_path / "Dataset_5971.csv"
+    pd.DataFrame(rows, columns=["LABEL", "TEXT", "URL", "EMAIL", "PHONE"]).to_csv(path, index=False)
+    return path
+
+
+def test_load_modern_data_maps_smishing_to_spam(tmp_path):
+    path = write_modern_csv(tmp_path, [
+        ["ham", "see you soon", "No", "No", "No"],
+        ["Smishing", "verify your bank account now", "Yes", "No", "No"],
+        ["Spam", "win a prize", "No", "No", "Yes"],
+    ])
+    df = load_modern_data(path)
+    assert df["label"].tolist() == ["ham", "spam", "spam"]
+    assert df["category"].tolist() == ["ham", "smishing", "spam"]
+
+
+def test_load_modern_data_rejects_unknown_labels(tmp_path):
+    path = write_modern_csv(tmp_path, [["maybe", "hello", "No", "No", "No"]])
+    with pytest.raises(ValueError, match="Unknown labels"):
+        load_modern_data(path)
+
+
+def test_modern_messages_already_in_uci_are_removed():
+    modern = pd.DataFrame({"label": ["spam", "spam", "ham"], "category": ["smishing", "spam", "ham"],
+                           "message": ["Verify your account NOW!", "WIN a prize", "new message here"]})
+    uci_clean = {"win a prize"}
+    result = prepare_modern_dataframe(modern, uci_clean)
+    assert result["clean_message"].tolist() == ["verify your account now", "new message here"]
+    assert result["category"].tolist() == ["smishing", "ham"]   # category column is kept
+
+
+def test_split_sizes_can_be_customized():
+    df = prepare_dataframe(make_df(n_ham=800, n_spam=200))
+    train, val, test = split_data(df, val_size=0.15, test_size=0.25)
+    assert (len(train), len(val), len(test)) == (600, 150, 250)
 
 
 # ---------- TextVectorizer ----------
