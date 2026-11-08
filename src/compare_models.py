@@ -30,7 +30,7 @@ VARIANTS = {
     "Balanced spam weight, tuned threshold": {"spam_weight": "balanced", "tune_threshold": True},
 }
 
-RESULTS_FILE = config.REPORTS_DIR / "model_comparison.json"
+RESULTS_FILE = config.MODEL_COMPARISON_FILE
 
 
 def main() -> None:

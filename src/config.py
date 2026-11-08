@@ -44,6 +44,8 @@ HISTORY_FILE = MODEL_DIR / "training_history.json"       # loss/accuracy per epo
 REPORTS_DIR = PROJECT_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 METRICS_FILE = REPORTS_DIR / "metrics.json"
+BASELINE_METRICS_FILE = REPORTS_DIR / "metrics_v1.json"   # v1.0 results, for before/after comparison
+MODEL_COMPARISON_FILE = REPORTS_DIR / "model_comparison.json"
 MISCLASSIFIED_FILE = REPORTS_DIR / "misclassified_test_messages.csv"
 
 # Default decision threshold: a message is spam when its probability is >= this.
