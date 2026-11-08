@@ -182,8 +182,10 @@ That's why precision, recall and F1 are reported. Full results are in [`reports/
 ### Improving spam recall: experiment
 
 v1.0 missed about 1 in 6 spam messages. To fix this, four ways of handling the class imbalance were compared using
-**only the validation set**, with a selection rule fixed before running: highest validation F1
-(`python -m src.compare_models`).
+**only the validation set**, with a selection rule fixed before running: highest validation F1.
+This experiment ran on the UCI data only; to reproduce these exact numbers, check out the `v2.0` tag and run
+`python -m src.compare_models`. (On the current code, `python -m src.compare_models imbalance` reruns it with today's
+data and saves the result separately.)
 
 | Variant (validation set, 89 spam) | Threshold | Precision | Recall | F1 |
 |---|---|---|---|---|
@@ -294,7 +296,7 @@ python -m src.download_data     # download the dataset into data/raw/
 python -m src.preprocessing     # clean, de-duplicate and split the data
 python -m src.train             # train the network (about 15 seconds on a laptop CPU)
 python -m src.evaluate          # test-set metrics and charts → reports/
-python -m src.compare_models    # optional: rerun the class-imbalance experiment (validation set)
+python -m src.compare_models    # optional: rerun the v3 model-selection experiment (validation set)
 ```
 
 ### Predict from the command line
