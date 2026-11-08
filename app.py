@@ -13,7 +13,15 @@ import pandas as pd
 import streamlit as st
 
 from src import config
-from src.batch import BatchFileError, classify_dataframe, read_messages_csv, summarize, to_csv_bytes
+from src.batch import (
+    BatchFileError,
+    classify_dataframe,
+    find_label_column,
+    read_messages_csv,
+    score_labeled_results,
+    summarize,
+    to_csv_bytes,
+)
 from src.predict import InvalidMessageError, SpamDetector, format_confidence
 
 st.set_page_config(page_title="SmartSpam — SMS Spam Detection", page_icon="📱", layout="centered")
@@ -114,10 +122,16 @@ def show_batch(detector: SpamDetector) -> None:
     st.write("Upload a CSV file with a column named **message**, **text**, **sms** or **body** "
              "(or a file with a single column). Maximum 5 MB and 5,000 rows.")
 
-    sample_path = config.PROJECT_ROOT / "samples" / "sample_messages.csv"
-    if sample_path.exists():
-        st.download_button("Download a sample CSV", sample_path.read_bytes(),
-                           file_name="sample_messages.csv", mime="text/csv")
+    st.write("Add a **label** column (spam / ham) to also see how accurate the model is on your messages.")
+
+    samples = config.PROJECT_ROOT / "samples"
+    left, right = st.columns(2)
+    if (samples / "sample_messages.csv").exists():
+        left.download_button("Download a sample CSV", (samples / "sample_messages.csv").read_bytes(),
+                             file_name="sample_messages.csv", mime="text/csv", width="stretch")
+    if (samples / "labeled_messages.csv").exists():
+        right.download_button("Download a labelled sample CSV", (samples / "labeled_messages.csv").read_bytes(),
+                              file_name="labeled_messages.csv", mime="text/csv", width="stretch")
 
     uploaded = st.file_uploader("Upload CSV file", type=["csv"])
     if uploaded is None:
@@ -158,6 +172,42 @@ def show_batch(detector: SpamDetector) -> None:
     output_name = uploaded.name.rsplit(".", 1)[0] + "_predictions.csv"
     st.download_button("Download predictions (CSV)", to_csv_bytes(results),
                        file_name=output_name, mime="text/csv", type="primary")
+
+    label_column = find_label_column(df, column)
+    if label_column:
+        show_labeled_scores(results, label_column)
+
+
+def show_labeled_scores(results, label_column: str) -> None:
+    """Score predictions against the labels in the uploaded file."""
+    st.subheader("How accurate was the model on your file?")
+    scored = score_labeled_results(results, label_column)
+    if scored is None:
+        st.warning(f"The **{label_column}** column was found, but none of its values could be read. "
+                   "Use **spam** or **ham** (or 1 / 0) for each row.", icon="⚠️")
+        return
+
+    m = scored["metrics"]
+    st.write(f"Predictions compared with the **{label_column}** column: "
+             f"{scored['rows_scored']:,} rows scored ({m['num_spam']:,} spam, {m['num_ham']:,} ham).")
+    if scored["rows_skipped"]:
+        st.caption(f"{scored['rows_skipped']:,} rows skipped (invalid message or unrecognized label).")
+
+    a, b, c, d = st.columns(4)
+    a.metric("Accuracy", f"{m['accuracy']:.2%}")
+    b.metric("Precision", f"{m['precision']:.2%}")
+    c.metric("Recall", f"{m['recall']:.2%}")
+    d.metric("F1-score", f"{m['f1']:.3f}")
+
+    cm = m["confusion_matrix"]
+    st.table(pd.DataFrame(
+        {"Predicted ham": [cm["true_negative"], cm["false_negative"]],
+         "Predicted spam": [cm["false_positive"], cm["true_positive"]]},
+        index=["Actually ham", "Actually spam"]))
+
+    if scored["rows_scored"] < 100:
+        st.caption("With fewer than 100 messages, one mistake changes these numbers a lot. "
+                   "The official results are on the Model Dashboard tab.")
 
 
 # ---------------------------------------------------------------------------
