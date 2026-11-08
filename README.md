@@ -96,37 +96,59 @@ counterparts of Keras' `TextVectorization` and `GlobalAveragePooling1D`.
 
 ## Dataset
 
-[UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+collection) by Almeida, Gómez Hidalgo
-and Yamakami (2011): 5,574 English SMS messages labelled ham or spam.
+Two English SMS datasets are used:
 
-| Step | Result |
-|---|---|
-| Raw messages | 5,574 (about 13% spam) |
-| After removing duplicate and empty messages | 5,096 (478 removed) |
-| Training / validation / test split (stratified 70 / 15 / 15) | 3,567 / 764 / 765 |
+1. **[UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+collection)** (Almeida, Gómez Hidalgo
+   and Yamakami, 2011): 5,574 messages labelled ham or spam.
+2. **[SMS Phishing Dataset for Machine Learning and Pattern Recognition](https://data.mendeley.com/datasets/f45bkkt8pr/1)**
+   (Mishra and Soni, 2022, CC BY 4.0): 5,971 messages labelled ham, spam or **smishing** (SMS phishing), including
+   newer scams such as COVID refund, bank-alert and Apple ID phishing. Many of its messages are copies of UCI
+   messages, so **only the 778 messages not already in the UCI data are used** (180 of them smishing).
 
-**Preventing data leakage:** duplicates are removed *before* splitting, so no message appears in both training and
-test data; the vocabulary is built from the training set only; and the test set is used once, for final evaluation.
-The dataset isn't stored in this repository; `python -m src.download_data` downloads it.
+| Step | UCI | Newer messages |
+|---|---|---|
+| Raw messages | 5,574 | 5,971 |
+| After removing duplicates, empty messages and (for the newer set) anything already in UCI | 5,096 | 778 |
+| Training / validation / test split (stratified) | 3,567 / 764 / 765 (70 / 15 / 15) | 466 / 117 / 195 (60 / 15 / 25) |
+
+Training and validation combine both sources. The **test sets are kept separate**: the UCI test set is exactly the
+one used for v1.0 and v2, so results stay comparable, and the newer messages form a **modern test set**.
+Smishing is treated as spam by the model and also reported separately.
+
+**Preventing data leakage:** duplicates are removed *before* splitting, so no message appears in more than one split;
+the vocabulary is built from the training set only; and model choices are made on the validation set.
+The datasets aren't stored in this repository; `python -m src.download_data` downloads them.
 
 ## Evaluation results
 
-Measured on the **held-out test set**: 765 messages (675 ham, 90 spam) that weren't used for training or model selection.
+**UCI test set:** 765 messages (675 ham, 90 spam) that weren't used for training or model selection.
 
-| Metric | v1.0 (threshold 0.50) | **v2 (threshold 0.30)** |
+| Metric | v1.0 (threshold 0.50) | v2 (threshold 0.30) | **+ newer training data (threshold 0.75)** |
+|---|---|---|---|
+| Accuracy | 97.65% | 97.65% | **97.78%** |
+| Precision (spam) | 95.00% | 93.90% | **92.94%** |
+| Recall (spam) | 84.44% (76 of 90) | 85.56% (77 of 90) | **87.78%** (79 of 90) |
+| F1-score (spam) | 0.8941 | 0.8953 | **0.9029** |
+| False alarms | 4 of 675 | 5 of 675 | 6 of 675 |
+| ROC-AUC | 0.9863 | 0.9863 | **0.9909** |
+
+**Modern test set:** 195 newer messages (115 ham, 80 spam, of which 51 smishing).
+
+| Metric | v2 (UCI data only) | **+ newer training data** |
 |---|---|---|
-| Accuracy | 97.65% | **97.65%** |
-| Precision (spam) | 95.00% | **93.90%** |
-| Recall (spam) | 84.44% (76 of 90 caught) | **85.56%** (77 of 90 caught) |
-| F1-score (spam) | 0.8941 | **0.8953** |
-| False alarms | 4 of 675 | 5 of 675 |
-| ROC-AUC | 0.9863 | 0.9863 |
+| Accuracy | 91.28% | **96.41%** |
+| Precision (spam) | 100.00% | **100.00%** |
+| Recall (spam) | 78.75% (63 of 80) | **91.25%** (73 of 80) |
+| Smishing caught | 44 of 51 (86.3%) | **48 of 51 (94.1%)** |
+| F1-score (spam) | 0.8811 | **0.9542** |
 
-<img src="reports/figures/confusion_matrix.png" alt="Confusion matrix" width="420">
+Training on newer messages improved results on modern scams the most, and also slightly improved UCI recall.
 
-Because only ~12% of messages are spam, accuracy alone is misleading: labelling everything "ham" would score 88%.
+<img src="reports/figures/confusion_matrix.png" alt="Confusion matrix (UCI test set)" width="400"> <img src="reports/figures/confusion_matrix_modern.png" alt="Confusion matrix (modern test set)" width="400">
+
+Because only ~12% of UCI messages are spam, accuracy alone is misleading: labelling everything "ham" would score 88%.
 That's why precision, recall and F1 are reported. Full results are in [`reports/metrics.json`](reports/metrics.json)
-(v1.0: [`reports/metrics_v1.json`](reports/metrics_v1.json)).
+(earlier: [`metrics_v2.json`](reports/metrics_v2.json), [`metrics_v1.json`](reports/metrics_v1.json)).
 
 ### Improving spam recall: experiment
 
@@ -277,3 +299,6 @@ Full details, with measured examples: **[docs/limitations.md](docs/limitations.m
 Dataset: T. A. Almeida, J. M. Gómez Hidalgo and A. Yamakami, "Contributions to the Study of SMS Spam Filtering:
 New Collection and Results," *Proceedings of the 2011 ACM Symposium on Document Engineering (DocEng '11)*.
 Available from the [UCI Machine Learning Repository](https://archive.ics.uci.edu/dataset/228/sms+spam+collection).
+
+Dataset: S. Mishra and D. Soni, "SMS Phishing Dataset for Machine Learning and Pattern Recognition," Mendeley Data,
+V1, 2022, doi: [10.17632/f45bkkt8pr.1](https://doi.org/10.17632/f45bkkt8pr.1). Licensed under CC BY 4.0.
