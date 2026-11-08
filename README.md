@@ -17,9 +17,15 @@ evaluation dashboard.
 
 ## Screenshots
 
-| Message scanner | Batch CSV with accuracy check |
+| Message scanner | Link Safety Check catches a scam the model missed |
 |---|---|
-| ![Message scanner](docs/screenshots/scanner.png) | ![Batch CSV](docs/screenshots/batch.png) |
+| ![Message scanner](docs/screenshots/scanner.png) | ![Link Safety Check](docs/screenshots/link_check.png) |
+
+<details>
+<summary><b>Batch CSV with accuracy check</b></summary>
+
+![Batch CSV](docs/screenshots/batch.png)
+</details>
 
 <details>
 <summary><b>Model evaluation dashboard</b></summary>
