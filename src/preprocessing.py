@@ -41,9 +41,12 @@ from src.config import (
 URL_PATTERN = re.compile(r"(https?://\S+|www\.\S+)")
 EMAIL_PATTERN = re.compile(r"\S+@\S+\.\S+")
 PHONE_PATTERN = re.compile(r"\d{5,}")         # 5+ digits in a row: phone numbers, short codes
-NUMBER_PATTERN = re.compile(r"\d+")
+# Numbers that stand alone or start a word ("150p", "2nite"). Digits inside a
+# word that starts with a letter ("fr33", "pr1ze", "b4") are kept as part of the
+# word, so the vectorizer can recognize SMS slang and repair disguised words.
+NUMBER_PATTERN = re.compile(r"(?<![a-z0-9])\d+")
 CURRENCY_PATTERN = re.compile(r"[£$€]")
-NON_WORD_PATTERN = re.compile(r"[^a-z\s]")    # anything that is not a letter or space
+NON_WORD_PATTERN = re.compile(r"[^a-z0-9\s]")  # anything that is not a letter, digit or space
 WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
@@ -75,6 +78,17 @@ def clean_text(text: str) -> str:
     return text
 
 
+def duplicate_key(text: str) -> str:
+    """A fixed version of the cleaned text, used only to find duplicates and split the data.
+
+    It treats every digit as a number (like the original v1.0 cleaning), so
+    'fr33' and 'fr44' count as the same message. Keeping this key fixed means
+    improving clean_text() never changes which messages land in the test set,
+    so results stay comparable across versions.
+    """
+    return WHITESPACE_PATTERN.sub(" ", re.sub(r"\d+", " numtoken ", clean_text(text))).strip()
+
+
 def load_raw_data(path=RAW_DATA_FILE) -> pd.DataFrame:
     """Read the raw dataset into a DataFrame with columns 'label' and 'message'."""
     if not path.exists():
@@ -97,6 +111,7 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Clean messages, encode labels and remove duplicates and empty rows."""
     df = df.copy()
     df["clean_message"] = df["message"].apply(clean_text)
+    df["duplicate_key"] = df["message"].apply(duplicate_key)
 
     # Convert text labels to numbers the neural network can learn from
     df["label_num"] = df["label"].map(LABEL_MAP)
@@ -106,12 +121,12 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df["label_num"] = df["label_num"].astype(int)
 
     # Drop messages that became empty after cleaning (e.g. only punctuation)
-    df = df[df["clean_message"] != ""]
+    df = df[df["duplicate_key"] != ""]
 
     # Drop duplicates. Many spam messages were sent repeatedly; if one copy
     # lands in training and another in testing, the test score would be
     # inflated because the model has already "seen" that exact message.
-    df = df.drop_duplicates(subset="clean_message", keep="first")
+    df = df.drop_duplicates(subset="duplicate_key", keep="first")
 
     return df.reset_index(drop=True)
 
@@ -163,7 +178,7 @@ def load_modern_data(path=MODERN_RAW_FILE) -> pd.DataFrame:
     })
 
 
-def prepare_modern_dataframe(modern_df: pd.DataFrame, existing_clean_messages) -> pd.DataFrame:
+def prepare_modern_dataframe(modern_df: pd.DataFrame, existing_keys) -> pd.DataFrame:
     """Clean the newer messages and keep only those NOT already in the UCI data.
 
     Many messages in this dataset were copied from the UCI collection. Keeping
@@ -172,7 +187,7 @@ def prepare_modern_dataframe(modern_df: pd.DataFrame, existing_clean_messages) -
     UCI data is removed.
     """
     df = prepare_dataframe(modern_df)
-    return df[~df["clean_message"].isin(set(existing_clean_messages))].reset_index(drop=True)
+    return df[~df["duplicate_key"].isin(set(existing_keys))].reset_index(drop=True)
 
 
 def load_processed_split(path) -> pd.DataFrame:
@@ -203,7 +218,7 @@ def main() -> None:
     # --- 2. Newer messages (Mishra & Soni, 2022), if downloaded ---
     if MODERN_RAW_FILE.exists():
         modern_raw = load_modern_data()
-        modern = prepare_modern_dataframe(modern_raw, uci["clean_message"]).assign(source="modern")
+        modern = prepare_modern_dataframe(modern_raw, uci["duplicate_key"]).assign(source="modern")
         print(f"Modern: loaded {len(modern_raw)} messages; {len(modern)} are new "
               f"(not in UCI, no duplicates) — {(modern['category'] == 'smishing').sum()} smishing")
         mod_train, mod_val, mod_test = split_data(modern, MODERN_VAL_SIZE, MODERN_TEST_SIZE)
