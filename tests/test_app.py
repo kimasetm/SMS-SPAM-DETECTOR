@@ -169,6 +169,13 @@ def test_dashboard_shows_change_from_previous_release(app):
     assert f"vs {BASELINE_LABEL}" in recall.delta
 
 
+def test_dashboard_shows_experiments_and_robustness(app):
+    labels = [e.label for e in app.expander]
+    assert any(label.startswith("v3 experiment") for label in labels)
+    assert any(label.startswith("v2 experiment") for label in labels)
+    assert any("still caught when words are disguised" in m.value for m in app.markdown)
+
+
 def test_dashboard_shows_modern_test_set(app):
     test_metrics = json.loads(METRICS_FILE.read_text(encoding="utf-8"))
     if "test_modern" not in test_metrics:

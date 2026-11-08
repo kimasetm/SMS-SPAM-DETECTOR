@@ -123,26 +123,35 @@ The datasets aren't stored in this repository; `python -m src.download_data` dow
 
 **UCI test set:** 765 messages (675 ham, 90 spam) that weren't used for training or model selection.
 
-| Metric | v1.0 (threshold 0.50) | v2 (threshold 0.30) | **+ newer training data (threshold 0.75)** |
-|---|---|---|---|
-| Accuracy | 97.65% | 97.65% | **97.78%** |
-| Precision (spam) | 95.00% | 93.90% | **92.94%** |
-| Recall (spam) | 84.44% (76 of 90) | 85.56% (77 of 90) | **87.78%** (79 of 90) |
-| F1-score (spam) | 0.8941 | 0.8953 | **0.9029** |
-| False alarms | 4 of 675 | 5 of 675 | 6 of 675 |
-| ROC-AUC | 0.9863 | 0.9863 | **0.9909** |
+| Metric | v1.0 (threshold 0.50) | v2 (threshold 0.30) | + newer data (threshold 0.75) | **+ misspelling repair (threshold 0.10)** |
+|---|---|---|---|---|
+| Accuracy | 97.65% | 97.65% | 97.78% | **96.86%** |
+| Precision (spam) | 95.00% | 93.90% | 92.94% | **83.67%** |
+| Recall (spam) | 84.44% (76 of 90) | 85.56% (77 of 90) | 87.78% (79 of 90) | **91.11%** (82 of 90) |
+| F1-score (spam) | 0.8941 | 0.8953 | 0.9029 | **0.8723** |
+| False alarms | 4 of 675 | 5 of 675 | 6 of 675 | **16 of 675** |
+| Disguised spam still caught | — | — | 67 of 90 | **85 of 90** |
+| ROC-AUC | 0.9863 | 0.9863 | 0.9909 | **0.9845** |
 
 **Modern test set:** 195 newer messages (115 ham, 80 spam, of which 51 smishing).
 
-| Metric | v2 (UCI data only) | **+ newer training data** |
-|---|---|---|
-| Accuracy | 91.28% | **96.41%** |
-| Precision (spam) | 100.00% | **100.00%** |
-| Recall (spam) | 78.75% (63 of 80) | **91.25%** (73 of 80) |
-| Smishing caught | 44 of 51 (86.3%) | **48 of 51 (94.1%)** |
-| F1-score (spam) | 0.8811 | **0.9542** |
+| Metric | v2 (UCI data only) | + newer data | **+ misspelling repair** |
+|---|---|---|---|
+| Accuracy | 91.28% | 96.41% | **97.44%** |
+| Precision (spam) | 100.00% | 100.00% | **97.47%** |
+| Recall (spam) | 78.75% (63 of 80) | 91.25% (73 of 80) | **96.25%** (77 of 80) |
+| Smishing caught | 44 of 51 (86.3%) | 48 of 51 (94.1%) | **49 of 51 (96.1%)** |
+| False alarms | 0 of 115 | 0 of 115 | **2 of 115** |
+| Disguised spam still caught | — | 55 of 80 | **79 of 80** |
+| F1-score (spam) | 0.8811 | 0.9542 | **0.9686** |
 
-Training on newer messages improved results on modern scams the most, and also slightly improved UCI recall.
+**What changed:** training on newer messages improved results on modern scams the most. The misspelling-repair model
+catches more spam overall and more disguised spam (partly thanks to repair, mostly thanks to its lower threshold; see
+the experiment below), **but** the threshold chosen on the validation set (0.10) is low, so false alarms on the UCI
+test set rose from 6 to 16 (2.4% of legitimate messages).
+That model was kept because it was selected by a rule fixed before looking at test results; choosing a different
+model *after* seeing them would make the test results unreliable. A more stable way of choosing the threshold is listed
+under future improvements.
 
 <img src="reports/figures/confusion_matrix.png" alt="Confusion matrix (UCI test set)" width="400"> <img src="reports/figures/confusion_matrix_modern.png" alt="Confusion matrix (modern test set)" width="400">
 
@@ -170,6 +179,38 @@ improvement is modest. The network's weights are unchanged; only the threshold m
 
 Note: the test set was first used to evaluate v1.0. All v2 choices were made on the validation set, and the test set
 was used once more only to report the final result.
+
+### Word order and misspellings: experiment
+
+Two remaining weaknesses were that average pooling ignores word order and that disguised words like "fr33 pr1ze"
+became unknown tokens. Two fixes were compared on the validation set (same rule: highest validation F1;
+`python -m src.compare_models`):
+
+- **1D CNN:** a convolution over 3-word windows with global max pooling, which reads short phrases, so word order matters.
+- **Misspelling repair:** unknown words are mapped to known ones when they look like disguised versions:
+  digits used as letters ("fr33" → "free"), spaced-out letters ("c a s h" → "cash") or a single typo ("prlze" → "prize").
+
+| Variant (validation set, 137 spam) | Threshold | Precision | Recall | F1 | Disguised spam caught* |
+|---|---|---|---|---|---|
+| Average pooling | 0.10 | 91.91% | 91.24% | 0.9158 | 97.08% |
+| **Average pooling + misspelling repair** ✅ | **0.10** | 91.43% | **93.43%** | **0.9242** | 97.08% |
+| 1D CNN | 0.45 | 96.72% | 86.13% | 0.9112 | 78.83% |
+| 1D CNN + misspelling repair | 0.40 | 92.37% | 88.32% | 0.9030 | 91.24% |
+
+\*Real validation spam with letters swapped for look-alike digits (first letter kept); for information only, not used
+for selection. It's measured at each variant's own threshold, so low-threshold variants score higher.
+
+**Findings:**
+- The **CNN did not beat average pooling** on this small dataset: it was more cautious (higher precision, lower
+  recall). Average pooling was kept, so word order is still ignored.
+- **Misspelling repair** was selected because it catches more ordinary spam (+3 on validation; on the modern test set,
+  the same model catches 77 of 80 spam with repair vs 73 without).
+- **Effect on disguised spam:** at the selected threshold (0.10), disguised spam is caught almost as often as the
+  original *with or without* repair, because a disguised word the model can't repair becomes a "numtoken" placeholder
+  that it links to spam. Compared at a **fixed 0.5 threshold**, repair clearly helps: disguised spam caught rises from
+  69 → 75 of 80 (modern test), 81 → 83 of 90 (UCI test) and 119 → 129 of 137 (validation).
+- The large jump in disguised spam caught compared with the previous model (UCI 67 → 85 of 90) is **mostly due to the
+  lower threshold**, not to repair alone.
 
 ## Installation
 

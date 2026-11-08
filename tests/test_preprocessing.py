@@ -34,6 +34,18 @@ def test_clean_text_decodes_html_entities():
     assert clean_text("I'll be there in &lt;#&gt; mins") == "i ll be there in mins"
 
 
+def test_clean_text_keeps_digits_inside_words():
+    # Letter-led words keep their digits (SMS slang, disguised words); standalone numbers still become numtoken
+    assert clean_text("FR33 PR1ZE!! See u b4 2nite, gr8") == "fr33 pr1ze see u b4 numtoken nite gr8"
+    assert clean_text("Txt WIN to 87121 150p/msg") == "txt win to phonetoken numtoken p msg"
+
+
+def test_duplicate_key_ignores_digits_like_v1_cleaning():
+    from src.preprocessing import duplicate_key
+    assert duplicate_key("FR33 prize") == duplicate_key("FR44 prize") == "fr numtoken prize"
+    assert duplicate_key("Call 09061701461 now") == "call phonetoken now"
+
+
 def test_clean_text_handles_empty_and_non_string():
     assert clean_text("") == ""
     assert clean_text("   ") == ""
@@ -182,6 +194,47 @@ def test_vectorizer_respects_max_tokens():
 def test_vectorizer_requires_fit():
     with pytest.raises(RuntimeError):
         TextVectorizer().encode("hello")
+
+
+REPAIR_VOCAB = ["win a free prize now claim your cash", "see you at lunch winner congratulations"]
+
+
+def repair_vectorizer():
+    return TextVectorizer(repair_misspellings=True).fit(REPAIR_VOCAB)
+
+
+@pytest.mark.parametrize("words, expected", [
+    (["fr33", "pr1ze"], ["free", "prize"]),           # digits used as letters
+    (["cl41m"], ["claim"]),
+    (["c", "a", "s", "h"], ["cash"]),                # spaced-out letters
+    (["prlze", "winnner"], ["prize", "winner"]),     # one typo in a longer word
+])
+def test_repair_fixes_disguised_words(words, expected):
+    assert repair_vectorizer().repair_tokens(words) == expected
+
+
+def test_repair_never_changes_known_or_ambiguous_words():
+    vec = repair_vectorizer()
+    assert vec.repair_tokens(["see", "you", "at", "lunch"]) == ["see", "you", "at", "lunch"]
+    assert vec.repair_tokens(["b4"]) == ["b4"]            # 1 letter: too ambiguous
+    assert vec.repair_tokens(["u", "r", "a"]) == ["u", "r", "a"]   # "ura" isn't a known word
+    assert vec.repair_tokens(["zzzzz"]) == ["zzzzz"]      # nothing close in the vocabulary
+
+
+def test_repair_is_off_unless_enabled():
+    vec = TextVectorizer().fit(REPAIR_VOCAB)
+    assert vec.tokenize("fr33 prize") == ["fr", "numtoken", "prize"]
+    assert repair_vectorizer().tokenize("fr33 prize") == ["free", "prize"]
+
+
+def test_unknown_words_with_digits_are_split_like_numbers():
+    vec = TextVectorizer().fit(["hello b4"])
+    assert vec.tokenize("b4 abc123") == ["b4", "abc", "numtoken"]   # known slang kept, unknown split
+
+
+def test_repair_setting_is_saved(tmp_path):
+    repair_vectorizer().save(tmp_path / "v.json")
+    assert TextVectorizer.load(tmp_path / "v.json").repair_misspellings is True
 
 
 def test_vectorizer_save_and_load_roundtrip(tmp_path):

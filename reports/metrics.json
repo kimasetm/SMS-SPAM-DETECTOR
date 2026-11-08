@@ -1,43 +1,55 @@
 {
   "test": {
-    "threshold": 0.75,
+    "threshold": 0.1,
     "num_messages": 765,
     "num_spam": 90,
     "num_ham": 675,
-    "accuracy": 0.9777777777777777,
-    "precision": 0.9294117647058824,
-    "recall": 0.8777777777777778,
-    "f1": 0.9028571428571428,
-    "roc_auc": 0.9908641975308643,
+    "accuracy": 0.9686274509803922,
+    "precision": 0.8367346938775511,
+    "recall": 0.9111111111111111,
+    "f1": 0.8723404255319149,
+    "roc_auc": 0.9844938271604939,
     "confusion_matrix": {
-      "true_negative": 669,
-      "false_positive": 6,
-      "false_negative": 11,
-      "true_positive": 79
+      "true_negative": 659,
+      "false_positive": 16,
+      "false_negative": 8,
+      "true_positive": 82
+    },
+    "disguised_spam": {
+      "count": 90,
+      "caught_original": 82,
+      "caught_disguised": 85,
+      "recall_disguised": 0.9444444444444444
     }
   },
   "test_modern": {
-    "threshold": 0.75,
+    "threshold": 0.1,
     "num_messages": 195,
     "num_spam": 80,
     "num_ham": 115,
-    "accuracy": 0.9641025641025641,
-    "precision": 1.0,
-    "recall": 0.9125,
-    "f1": 0.954248366013072,
-    "roc_auc": 0.9976086956521739,
+    "accuracy": 0.9743589743589743,
+    "precision": 0.9746835443037974,
+    "recall": 0.9625,
+    "f1": 0.9685534591194969,
+    "roc_auc": 0.9969565217391305,
     "confusion_matrix": {
-      "true_negative": 115,
-      "false_positive": 0,
-      "false_negative": 7,
-      "true_positive": 73
+      "true_negative": 113,
+      "false_positive": 2,
+      "false_negative": 3,
+      "true_positive": 77
     },
     "smishing_count": 51,
-    "smishing_caught": 48,
-    "smishing_recall": 0.9411764705882353
+    "smishing_caught": 49,
+    "smishing_recall": 0.9607843137254902,
+    "disguised_spam": {
+      "count": 80,
+      "caught_original": 77,
+      "caught_disguised": 79,
+      "recall_disguised": 0.9875
+    }
   },
   "model": {
-    "best_epoch": 30,
-    "best_val_accuracy": 0.9795686719636776
+    "best_epoch": 20,
+    "best_val_accuracy": 0.9716231555051078
   }
 }
