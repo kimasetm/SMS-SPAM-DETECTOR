@@ -6,18 +6,21 @@ A machine learning web application that classifies SMS messages as **SPAM** or *
 The model is a PyTorch neural network trained on the
 [UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+collection) dataset.
 
-> Project under development. Completed so far: data preprocessing, the neural network, model evaluation and the prediction engine.
+> Project under development. Completed so far: data preprocessing, the neural network, model evaluation, the prediction engine and the web app.
 
 ## Project structure
 
 ```
+├── app.py                  # Streamlit web app
 ├── .github/workflows/      # CI: runs tests on pull requests
+├── .streamlit/config.toml  # app theme and upload limit (no secrets)
 ├── data/
 │   ├── raw/                # SMSSpamCollection (downloaded, not stored in git)
 │   └── processed/          # train.csv, val.csv, test.csv (generated)
 ├── models/                 # trained weights, vocabulary, config, training history
 ├── reports/                # metrics.json and figures/ (evaluation charts)
 ├── samples/                # example CSV for batch classification
+├── docs/                   # deployment guide
 ├── src/
 │   ├── config.py           # shared paths, hyperparameters and settings
 │   ├── download_data.py    # downloads the UCI dataset
@@ -134,6 +137,23 @@ Because only ~12% of messages are spam, accuracy alone is misleading: a model th
 
 Full results are saved in [`reports/metrics.json`](reports/metrics.json). Running the evaluation also writes
 `reports/misclassified_test_messages.csv` locally for error analysis. It isn't committed, because it contains raw dataset text.
+
+## Run the web app
+
+```bash
+streamlit run app.py
+```
+
+Then open <http://localhost:8501>. The app has three tabs:
+
+- **🔍 Message Scanner:** type or paste a message (or click an example) and click **Predict** to see
+  **SPAM** or **HAM**, the confidence and the spam probability. A warning appears for empty input.
+- **📄 Batch CSV:** upload a CSV of messages, see summary counts and a results table, and download the predictions.
+- **📊 Model Dashboard:** test-set accuracy, precision, recall and F1, plus the confusion matrix, training charts
+  and model details, all read from `reports/`.
+
+Every prediction comes from the trained neural network; there are no keyword rules.
+See [docs/deployment.md](docs/deployment.md) to deploy the app to Streamlit Community Cloud.
 
 ## Make predictions
 
