@@ -3,174 +3,165 @@
 **Course:** Artificial Intelligence / Machine Learning · **Instructor:** Professor Griffin
 **Repository:** <https://github.com/kimasetm/SMS-SPAM-DETECTOR>
 
-> **Draft.** Review and rewrite this report in your own words before submitting it.
-
 ## 1. What I built
 
-SmartSpam is a web application that classifies SMS text messages as **spam** or **ham** (legitimate) with a
-neural network. A user types a message, clicks **Predict**, and sees the prediction with a confidence score, plus
-separate checks on any links and on the sender. I built it in three releases, each driven by the measured
-weaknesses of the previous one:
+SmartSpam is a web application that uses a neural network to classify SMS text messages as **spam** or **ham**
+(legitimate). A user types or pastes a message, clicks **Predict**, and sees whether the trained model thinks it is
+spam, along with a confidence score. The app has three tabs:
 
-- **v1.0 — the core system.** A data pipeline for the UCI SMS Spam Collection (5,574 messages; 478 duplicate or
-  empty messages removed; stratified 70/15/15 split), a PyTorch neural network (text vectorization → embedding →
-  global average pooling → dense layers with dropout), a reproducible training pipeline with early stopping, a
-  test-set evaluation, a prediction engine, and a Streamlit app with a message scanner, CSV batch classification
-  and an evaluation dashboard.
-- **v2.0 — catching more spam and judging links.** A decision threshold chosen by a controlled experiment, and a
-  rule-based **Link Safety Check** that flags phishing warning signs in links.
-- **v3.0 — modern data and robustness.** 778 newer messages (including 180 smishing) from a second dataset and a
-  separate **modern test set**; **misspelling repair** ("fr33" → "free"); a 1D CNN experiment; **calibrated
-  confidence** (temperature scaling); **drift monitoring**; and opt-in **threat intelligence** (OpenPhish blocklist,
-  domain age via RDAP) plus a **sender check**.
+- **Message Scanner:** classifies one message. Separate checks also look at any links in the message (phishing
+  warning signs, plus an optional phishing blocklist and domain-age lookup) and at the sender (for example,
+  premium-rate numbers).
+- **Batch CSV:** classifies up to 5,000 messages from an uploaded file and lets the user download the results.
+  If the file includes the correct answers, the app also scores its own accuracy.
+- **Model Dashboard:** shows how well the model performs on test data it never saw during training.
 
-The project has **195 automated tests**, run by GitHub Actions on every pull request, and documentation that
-includes the system's limitations.
+I built the project in three releases. Each release fixed weaknesses that I had measured in the previous one:
+
+| Release | Main additions |
+|---|---|
+| **v1.0** | Data pipeline, PyTorch neural network, training with early stopping, evaluation, prediction engine, Streamlit app |
+| **v2.0** | Decision threshold chosen by an experiment; rule-based Link Safety Check |
+| **v3.0** | Newer training data with SMS phishing ("smishing"); repair of disguised words like "fr33"; calibrated confidence; drift monitoring; phishing blocklist, domain-age and sender checks |
+
+The model is trained on two public datasets: the **UCI SMS Spam Collection** (5,574 messages from about 2011) and
+778 newer messages from the **SMS Phishing Dataset** by Mishra and Soni (2022), of which 180 are smishing. I removed
+duplicate messages before splitting the data into training (70%), validation (15%) and test (15%) sets, so that no
+message appears in more than one set. The newer messages have their own test set, so I can measure performance on
+modern scams separately.
+
+### The neural network
+
+| Step | What it does |
+|---|---|
+| Text cleaning | Lowercases the text and replaces URLs, phone numbers, prices and numbers with placeholder words |
+| Text vectorization | Turns each word into a number using a vocabulary learned from the training data only; repairs disguised words such as "fr33" → "free" |
+| Embedding (32 dimensions) | Learns a vector for each word, so words used in similar ways get similar vectors |
+| Global average pooling | Averages the word vectors into one vector per message |
+| Dense layer (16, ReLU) with dropout (0.3) | Learns combinations of features; dropout randomly switches off neurons during training to reduce overfitting |
+| Output layer + sigmoid | Produces the probability that the message is spam, adjusted by temperature scaling so the confidence is more realistic |
+
+I trained it with binary cross-entropy loss and the Adam optimizer, and used **early stopping**: training stops when
+the validation loss stops improving, and the best weights are kept. All random seeds are fixed, so retraining gives
+exactly the same model.
 
 ### Results
 
-**UCI test set** (765 messages, 90 spam; identical across all versions, so results are comparable):
+The results come from test messages the model never saw during training. The UCI test set is identical for every
+release, so the numbers can be compared directly.
 
-| Version | Accuracy | Precision | Recall | F1-score | False alarms |
-|---|---|---|---|---|---|
-| v1.0 (threshold 0.50) | 97.65% | 95.00% | 84.44% | 0.894 | 4 of 675 |
-| v2.0 (threshold 0.30) | 97.65% | 93.90% | 85.56% | 0.895 | 5 of 675 |
-| **v3.0** | **96.86%** | **83.67%** | **91.11%** | **0.872** | **16 of 675** |
+| | v1.0 | v2.0 | **v3.0** |
+|---|---|---|---|
+| UCI test (765 messages): spam caught (recall) | 84.4% | 85.6% | **91.1%** |
+| UCI test: legitimate messages wrongly flagged | 4 of 675 | 5 of 675 | **16 of 675** |
+| UCI test: F1-score | 0.894 | 0.895 | 0.872 |
+| Modern test (195 messages): spam caught | — | 78.8% | **96.3%** |
+| Modern test: smishing caught | — | 44 of 51 | **49 of 51** |
 
-**Modern test set** (195 newer messages, 80 spam, of which 51 smishing):
-
-| Version | Accuracy | Precision | Recall | F1-score | Smishing caught |
-|---|---|---|---|---|---|
-| v2.0 | 91.28% | 100.00% | 78.75% | 0.881 | 44 of 51 |
-| **v3.0** | **97.44%** | **97.47%** | **96.25%** | **0.969** | **49 of 51** |
-
-v3.0 catches far more modern spam and more UCI spam, but flags more legitimate UCI messages (see section 3,
-problem 14).
+v3.0 catches much more spam, especially modern scams, but it also flags more legitimate messages. I explain this
+trade-off in section 3.
 
 ## 2. Why I chose these technologies
 
-| Technology | Why |
+| Technology | Why I chose it |
 |---|---|
-| **Python** | The standard language for machine learning, with mature libraries for every step. |
-| **PyTorch** | The brief allowed TensorFlow/Keras or PyTorch. TensorFlow didn't offer packages for Python 3.14, my development environment, while PyTorch did. PyTorch also made me write the training loop myself, which helped me understand forward passes, loss, backpropagation and optimizer steps. |
-| **pandas** | Loading, cleaning, de-duplicating and saving the datasets as tables. |
-| **scikit-learn** | A reliable stratified train/validation/test split and standard evaluation metrics. |
-| **Matplotlib** | Charts of training history, confusion matrices and calibration. |
-| **Streamlit** | Turns a Python script into a web app without HTML or JavaScript, and can be deployed free on Streamlit Community Cloud. |
-| **pytest + GitHub Actions** | Automated tests that run on every pull request, so broken code is caught before it's merged. |
-| **Git and GitHub** | Version control with a `main` / `dev` / feature-branch workflow, pull requests and tagged releases. |
-| **OpenPhish and RDAP** | Free threat-intelligence sources that need no API keys, so there are no secrets to protect. |
+| **Python** | The standard language for machine learning, with libraries for every step of the project |
+| **PyTorch** | The assignment allowed TensorFlow/Keras or PyTorch. TensorFlow didn't support Python 3.14, which I was using, but PyTorch did. PyTorch also made me write the training loop myself, which helped me understand how a network actually learns |
+| **pandas** | Loading, cleaning and splitting the datasets |
+| **scikit-learn** | Reliable data splitting and standard evaluation metrics (accuracy, precision, recall, F1, confusion matrix) |
+| **Matplotlib** | Charts of the training progress, confusion matrices and calibration |
+| **Streamlit** | Turns Python code into a web app without writing HTML or JavaScript, and can be hosted for free |
+| **pytest and GitHub Actions** | 195 automated tests that run on every pull request, so mistakes are caught before code is merged |
+| **Git and GitHub** | Version control with `main`, `dev` and feature branches, pull requests and tagged releases |
 
-### Model design (v3.0)
+## 3. Problems I encountered
 
-| Step | Purpose |
-|---|---|
-| Text cleaning | Lowercases, decodes HTML, replaces URLs, phone numbers, prices and numbers with placeholder words, and keeps digits inside words ("fr33") so disguised words can be repaired. |
-| Text vectorization | Converts each word to an integer ID using a vocabulary of 6,913 words learned **only from the training set**, and pads or truncates to 50 words. Unknown words that look disguised are repaired first. PyTorch has no built-in equivalent of Keras' `TextVectorization`, so I wrote a `TextVectorizer` class. |
-| Embedding (32 dimensions) | Learns a vector for each word; words used in similar contexts end up with similar vectors. |
-| Global average pooling | Averages the word vectors into one vector per message, ignoring padding (the PyTorch equivalent of `GlobalAveragePooling1D` with masking). |
-| Dense (16, ReLU) + dropout (0.3) | Learns combinations of features; dropout randomly disables neurons during training to reduce overfitting. |
-| Dense (1) → ÷ temperature → sigmoid | Outputs the calibrated probability that the message is spam. Temperature T = 1.55 was fitted on the validation set. A message is labelled spam at ≥ 0.19 on the calibrated scale (0.10 on the raw probability, chosen on the validation set). |
+1. **TensorFlow didn't work with my Python version.** I switched to PyTorch. Because PyTorch has no ready-made
+   text-vectorization layer, I wrote my own.
 
-Training used binary cross-entropy loss, the Adam optimizer (learning rate 0.001) and batches of 32. Training
-stopped after epoch 23 because validation loss hadn't improved for 3 epochs, and the weights from the best epoch
-(20) were kept. The model has 221,761 trainable parameters.
+2. **Duplicate messages could make the results look too good.** The dataset contains many copies of the same spam
+   message. If one copy is in the training data and another in the test data, the model is tested on something it
+   has already seen. I removed 478 duplicates before splitting the data, and later I also removed newer messages
+   that were copies of UCI messages.
 
-## 3. Problems I encountered and how I solved them
+3. **Accuracy was misleading.** Only about 12% of the messages are spam, so a model that labels everything "ham"
+   still scores 88% accuracy. That actually happened in the first epochs of training. That's why I focused on
+   precision, recall and F1-score.
 
-**v1.0**
+4. **The model missed too much spam.** v1.0 caught only 84% of the spam. I compared several fixes on the
+   validation set, deciding in advance that I would choose the one with the best F1-score. Giving spam more weight
+   during training didn't help; lowering the decision threshold did, but only slightly on the test set.
 
-1. **TensorFlow wasn't available for my Python version.** Instead of installing an older Python, I used PyTorch
-   and wrote my own text vectorizer.
-2. **Duplicate messages could leak into the test set.** I removed 478 duplicate or empty messages *before*
-   splitting, and wrote a test that checks the splits don't overlap.
-3. **Preventing data leakage from preprocessing.** The vocabulary is fitted only on training messages. A test
-   verifies this.
-4. **HTML codes in the data.** Text like `&lt;#&gt;` became fake words ("lt", "gt"), so I decoded HTML entities.
-5. **A misleading accuracy number.** In the first two epochs, the model had 88% validation accuracy while
-   predicting "ham" for everything. That's why I report precision, recall and F1.
-6. **A security bug caught by testing.** My CSV formula-injection protection (cells starting with `=`, `+`, `-`
-   or `@`) first didn't work, because pandas 3 stores text in a new data type that my check skipped. A test row
-   exposed it.
-7. **Large installs.** I configured the CPU-only PyTorch build, avoiding about 2 GB of GPU libraries in CI and
-   on Streamlit Community Cloud.
-8. **Sensitive content.** Misclassified test messages contain explicit spam text, so I keep them out of the
-   public repository.
+5. **The model couldn't judge links.** It sees every link as the same placeholder word, so it can't tell a safe
+   link from a phishing link. I added separate, clearly labelled link checks that never open the link. One bug I
+   found: email addresses were being treated as links.
 
-**v2.0**
+6. **The training data was old.** v2.0 labelled a modern parcel-delivery scam as legitimate. I found a newer,
+   properly licensed dataset with smishing messages. Adding it raised the share of modern spam caught from 79% to
+   91%, and the final model, which also repairs disguised words, catches 96%.
 
-9. **Low spam recall (84%).** I compared four approaches **on the validation set only**, with the selection rule
-   (highest validation F1) fixed before running. Class weighting didn't help; lowering the threshold to 0.30 did.
-   On the test set, the gain was small (+1 spam caught, +1 false alarm): improvements measured on a small
-   validation set often shrink on new data.
-10. **The model couldn't judge links.** Every URL becomes the word `urltoken`, so I added a separate, clearly
-    labelled rule-based Link Safety Check that never opens links. I fixed a bug where email addresses were
-    treated as links.
+7. **Improving the text cleaning moved a message out of the test set.** That would have made comparisons with
+   earlier versions unfair. I separated the key used to find duplicates from the text the model reads, and checked
+   that every data split stayed exactly the same.
 
-**v3.0**
+8. **A more complex model didn't help.** I built a 1D convolutional network (CNN), which reads short phrases, so word
+   order matters. On the validation set it performed slightly worse than the simpler model, so I kept the simpler one.
 
-11. **Old training data.** I found a properly licensed newer dataset (Mishra & Soni, 2022, CC BY 4.0). Many of its
-    messages were copies of UCI messages, so I kept only the 778 new ones and gave them their own test set. Training
-    on them raised modern-test recall from 78.8% to 91.3%. (Downloading it failed at first with "403 Forbidden"
-    because the server rejected Python's default User-Agent.)
-12. **Improving the cleaning shifted the test set.** Keeping digits inside words changed which messages counted as
-    duplicates, and one spam message moved out of the UCI test set, which would have broken comparisons with earlier
-    versions. I separated the *duplicate key* (fixed, based on the original cleaning) from the *model input*, and
-    proved that every split is row-for-row identical to before.
-13. **The CNN didn't win.** A 1D CNN, which reads word order, scored lower validation F1 than average pooling
-    (0.911 vs 0.924 with misspelling repair), so I kept the simpler model. On a small dataset, more complex isn't
-    automatically better.
-14. **A trade-off I had to accept.** The model chosen by the rule (average pooling + misspelling repair) has a low
-    threshold, which tripled UCI false alarms (6 → 16) while catching more spam. Switching to another model *after*
-    seeing test results would have made the test numbers unreliable, so I kept it and documented the trade-off.
-15. **Bugs in my own experiments.** A rerun silently gave every variant misspelling repair, because variants
-    inherited a changed default; I made every experiment setting explicit. My robustness test also inflated scores
-    (changing a word's first letter created a "number" token that the model links to spam), and I first overstated
-    how much misspelling repair improved robustness. When I separated the effects, most of the gain came from the
-    lower threshold; at a fixed threshold, repair still raised disguised modern spam caught from 69 to 75 of 80.
-16. **Calibration helped only partly.** Temperature scaling improved calibration on the UCI test set but not on the
-    modern set, where the model is underconfident; one temperature can't fit both kinds of data.
-17. **Threat-intelligence edge cases.** Domain age was looked up for shared platforms like `github.io`, which says
-    nothing about one user's page, so those are skipped. Online checks are opt-in, because they send link addresses
-    to third parties, and network failures are reported instead of crashing the app.
+9. **More spam caught, but more false alarms.** The model chosen by my selection rule uses a low threshold, so false
+   alarms on the UCI test set rose to 16 out of 675 (the model before it had 6). I kept it anyway. Choosing a different model after seeing
+   the test results would have made those results unreliable, so instead I documented the trade-off.
+
+10. **Mistakes in my own experiments.** Twice my testing gave misleading numbers: a setting changed silently between
+    experiments, and my robustness test for disguised words inflated the results. When I separated the effects, I
+    found that I had overstated how much the misspelling repair helped. I fixed the code and corrected the
+    documentation.
+
+11. **Security and privacy.** I protected downloaded CSV files against formula injection, which caught a real bug
+    during testing. I made the online link checks optional, because they send the link to outside services, and I
+    kept explicit spam messages out of the public repository.
 
 ## 4. What I learned
 
-- **Machine learning concepts:** embeddings, pooling, convolutions, dropout, binary cross-entropy, backpropagation,
-  early stopping, and confidence calibration with temperature scaling.
-- **Evaluation:** why held-out test sets matter, why accuracy is misleading on imbalanced data, the precision/recall
-  trade-off, and why testing on a *separate, newer* test set reveals weaknesses that the original test set hides.
-- **Data leakage and reproducibility:** removing duplicates before splitting, fitting preprocessing on training data
-  only, fixing random seeds, and keeping splits stable when the code changes.
-- **Running fair experiments:** fixing the selection rule before looking at results, making choices on the
-  validation set, isolating one change at a time (ablation), and reporting modest or negative results honestly.
-- **Security thinking:** how phishing links hide their real destination, how threat intelligence and domain age
-  help, why "no warning signs" doesn't mean safe, and the privacy cost of online lookups.
-- **Software engineering:** reusable modules, input validation, automated tests (including tests that fake network
-  calls), CI, feature branches, pull requests and tagged releases.
-- **Responsible AI:** a model is only as good as its data; monitoring matters because models fail silently on new
-  kinds of messages (a Spanish test showed a normal-looking spam rate while most scams were missed).
+- **How a neural network for text works:** embeddings, pooling, dense layers, dropout, loss functions,
+  backpropagation and early stopping.
+- **How to evaluate a model honestly:** keep a separate test set, look beyond accuracy, understand the trade-off
+  between precision and recall, and test on newer data to find weaknesses the original test set hides.
+- **How to avoid data leakage:** remove duplicates before splitting, and build the vocabulary from training data only.
+- **How to run fair experiments:** decide how to choose a model before seeing the results, make choices on the
+  validation set, change one thing at a time, and report results honestly, even when an idea doesn't work.
+- **Security thinking:** how phishing links disguise their destination, and why simple, explainable rules are a useful
+  addition to a machine learning model.
+- **Software engineering:** organizing code into modules, writing automated tests, using continuous integration, and
+  working with branches, pull requests and releases.
+- **Responsible AI:** a model is only as good as its data, and it can fail silently on new kinds of messages, which is
+  why monitoring matters.
 
 ## 5. Limitations and possible improvements
 
-The full discussion is in [limitations.md](limitations.md). In short: the model still makes mistakes in both
-directions and has more false alarms than v1.0; social-engineering scams without links or prizes are missed; the
-data is small and English-only; word order is ignored; calibration is only partly effective; and the link and sender
-checks are rule-based, never visit links and can be evaded.
+SmartSpam is a learning project, **not** protection against phishing or scams. Its main limitations:
+
+- It still makes mistakes in both directions, and it flags more legitimate messages than v1.0 did.
+- It misses scams that read like normal conversation, such as *"Hi mum, I dropped my phone, can you send me £200?"*
+- It only understands English, and its training data is small.
+- It ignores word order, and the link and sender checks are simple rules that can be evaded.
+
+Full details, with measured examples, are in [limitations.md](limitations.md).
 
 Possible improvements:
 
-1. **A more stable threshold choice** (cross-validation or a cost-based rule) to reduce false alarms.
-2. **More, newer and multilingual data**, which could let sequence models such as LSTMs or small transformers help.
-3. **Calibration per data source**, since one temperature can't fit both old and modern messages.
-4. **Stronger link intelligence**, such as Google Safe Browsing (API key in Streamlit secrets) and sandboxed link expansion.
-5. **Continuous monitoring and retraining** based on aggregate drift statistics.
+1. **A more stable way to choose the threshold**, such as cross-validation, to reduce false alarms.
+2. **More, newer and multilingual training data**, which could also let more advanced models (LSTMs or transformers) help.
+3. **Separate calibration for older and newer messages**, since one setting couldn't fit both.
+4. **Stronger link checks**, such as Google Safe Browsing, with the API key stored securely.
+5. **Continuous monitoring and retraining** as spam changes over time.
 
 ## 6. Use of AI tools
 
-I used an AI coding assistant (Claude Code) during development to help write and review code, tests and
-documentation. I reviewed, ran and tested the work at each phase, and I can explain how each part works.
+I used an AI coding assistant (Claude Code) to help write and review code, tests and documentation, including this
+report. I decided what to build, reviewed and ran each phase, merged every change myself after testing it, and I can
+explain how each part of the project works.
 
 ## 7. How to run the project
 
-See the [README](../README.md) for installation, training, evaluation, testing and app instructions.
+The [README](../README.md) explains how to install the project, train and evaluate the model, run the tests and start
+the app.

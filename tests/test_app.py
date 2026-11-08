@@ -25,7 +25,7 @@ def click(app, label):
 
 def test_app_loads_without_errors(app):
     assert not app.exception
-    assert app.title[0].value == "SmartSpam — SMS Spam Detection"
+    assert app.title[0].value == ":blue[SmartSpam] — SMS Spam Detection"   # shown as "SmartSpam — SMS Spam Detection"
     assert [tab.label for tab in app.tabs] == ["🔍 Message Scanner", "📄 Batch CSV", "📊 Model Dashboard"]
 
 
@@ -73,7 +73,7 @@ def test_delivery_scam_link_is_flagged_even_when_model_says_ham(app):
     click(app, "Delivery scam")
     click(app, "Predict")
     assert not app.exception
-    assert any("Link Safety Check" in m.value for m in app.markdown)
+    assert any("#### 🔗 Link Safety Check" in m.value for m in app.markdown)
     assert any("High risk" in e.value and "parcel-redelivery.info" in e.value for e in app.error)
     if app.success:   # the model rated the text as HAM
         assert any("link shows warning signs" in w.value for w in app.warning)
@@ -88,7 +88,8 @@ def test_safe_link_shows_no_warning_signs(app):
 def test_message_without_links_has_no_link_section(app):
     click(app, "Family")
     click(app, "Predict")
-    assert not any("Link Safety Check" in m.value for m in app.markdown)
+    # The section heading (not the banner, which mentions the feature) must be absent
+    assert not any("#### 🔗 Link Safety Check" in m.value for m in app.markdown)
 
 
 def test_link_check_uses_the_predicted_message_not_later_edits(app):

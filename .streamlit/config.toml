@@ -2,8 +2,32 @@
 # This file contains no secrets. Never put passwords or API keys here;
 # Streamlit secrets belong in .streamlit/secrets.toml, which is git-ignored.
 
+# Blue and grey theme. Each viewer gets the light or dark version depending
+# on their system / browser setting.
 [theme]
+primaryColor = "#2a78d6"     # blue: buttons, active tab, progress bars, links
+baseRadius = "0.5rem"
+showWidgetBorder = true
+
+[theme.light]
 primaryColor = "#2a78d6"
+backgroundColor = "#f4f6f9"            # light grey page
+secondaryBackgroundColor = "#e3e8ef"   # blue-grey input boxes and panels
+textColor = "#1f2933"                  # charcoal text
+borderColor = "#c9d1db"
+linkColor = "#1c5cab"
+blueColor = "#1c5cab"                  # used by :blue[...] text, e.g. the app title
+grayColor = "#52606d"
+
+[theme.dark]
+primaryColor = "#3987e5"
+backgroundColor = "#1b1f26"            # dark grey page
+secondaryBackgroundColor = "#2a303a"
+textColor = "#e4e7eb"
+borderColor = "#3d4553"
+linkColor = "#6da7ec"
+blueColor = "#6da7ec"
+grayColor = "#9aa5b1"
 
 [server]
 # Matches the batch upload limit enforced in src/batch.py
