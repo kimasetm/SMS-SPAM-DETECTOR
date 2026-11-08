@@ -1,0 +1,9 @@
+{
+  "num_messages": 881,
+  "unknown_word_rate": 0.0437207380886808,
+  "avg_words": 16.72190692395006,
+  "url_rate": 0.014755959137343927,
+  "phone_rate": 0.11010215664018161,
+  "predicted_spam_rate": 0.15891032917139614,
+  "uncertain_rate": 0.053348467650397274
+}

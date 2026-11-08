@@ -26,7 +26,7 @@ import pandas as pd
 from sklearn.metrics import classification_report
 
 from src import config
-from src.metrics import compute_metrics
+from src.metrics import brier_score, compute_metrics, expected_calibration_error, reliability_bins
 from src.model import load_artifacts, predict_probabilities
 from src.robustness import disguised_spam_recall
 from src.preprocessing import load_processed_split
@@ -157,8 +157,66 @@ def evaluate_split(name, test_df, model, vectorizer, threshold):
         print(f"Disguised spam still caught: {robust['caught_disguised']} of {robust['count']} "
               f"({robust['recall_disguised']:.2%}; undisguised: {robust['caught_original']})")
 
+    # Calibration: how well the confidence matches reality, before and after temperature scaling
+    temperature = getattr(model, "temperature", 1.0)
+    model.temperature = 1.0
+    y_prob_raw = predict_probabilities(model, vectorizer, texts)
+    model.temperature = temperature
+    metrics["calibration"] = {
+        "temperature": temperature,
+        "ece_uncalibrated": expected_calibration_error(y_true, y_prob_raw),
+        "ece": expected_calibration_error(y_true, y_prob),
+        "brier_uncalibrated": brier_score(y_true, y_prob_raw),
+        "brier": brier_score(y_true, y_prob),
+        "bins_uncalibrated": reliability_bins(y_true, y_prob_raw),
+        "bins": reliability_bins(y_true, y_prob),
+    }
+    c = metrics["calibration"]
+    print(f"Calibration error (ECE): {c['ece_uncalibrated']:.4f} -> {c['ece']:.4f} | "
+          f"Brier score: {c['brier_uncalibrated']:.4f} -> {c['brier']:.4f} (temperature {temperature:.3f})")
+
     wrong = test_df.assign(spam_probability=y_prob.round(4), predicted=y_pred, test_set=name)[y_pred != y_true]
     return metrics, wrong.rename(columns={"label_num": "actual"})
+
+
+def plot_reliability(panels: dict, path) -> None:
+    """Reliability diagram: predicted spam probability vs the actual spam rate, per bin.
+
+    panels: {"Panel title": calibration dict from evaluate_split}. Points on the
+    dashed diagonal are perfectly calibrated; point size shows how many messages
+    fall in each bin.
+    """
+    fig, axes = plt.subplots(1, len(panels), figsize=(5.2 * len(panels), 4.6), squeeze=False)
+    for ax, (title, cal) in zip(axes[0], panels.items()):
+        _style_axes(ax)
+        ax.grid(axis="x", color=GRID, linewidth=0.8)
+        ax.plot([0, 1], [0, 1], color=AXIS, linewidth=1, linestyle="--")
+        # Points only (no connecting lines): many bins hold just 1-3 messages,
+        # and lines would make that noise look like a trend.
+        for key, color, marker, label in (("bins_uncalibrated", TRAIN_COLOR, "s", "Before calibration"),
+                                          ("bins", VAL_COLOR, "o", "After calibration")):
+            bins = cal[key]
+            x = [b["mean_predicted"] for b in bins]
+            y = [b["actual_spam_rate"] for b in bins]
+            sizes = [20 + 12 * np.sqrt(b["count"]) for b in bins]
+            ax.scatter(x, y, s=sizes, color=color, marker=marker, edgecolor="white", linewidth=1.5,
+                       alpha=0.85, zorder=3, label=label)
+        ax.text(0.98, 0.03, "Point size = number of messages", transform=ax.transAxes, ha="right",
+                fontsize=8, color=MUTED_INK)
+        ax.set_xlim(-0.02, 1.02)
+        ax.set_ylim(-0.02, 1.02)
+        ax.set_xlabel("Predicted spam probability", fontsize=9, color=MUTED_INK)
+        ax.set_ylabel("Actual share of spam", fontsize=9, color=MUTED_INK)
+        ax.set_title(f"{title}\nECE {cal['ece_uncalibrated']:.3f} → {cal['ece']:.3f}",
+                     loc="left", fontsize=10, color=INK)
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, fontsize=9, labelcolor=MUTED_INK, loc="upper right", ncol=2,
+               markerscale=0.6)
+    fig.suptitle("Calibration (reliability diagram)", x=0.01, ha="left", fontsize=13, color=INK)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=150, facecolor="white")
+    plt.close(fig)
 
 
 def main() -> None:
@@ -194,6 +252,10 @@ def main() -> None:
         plot_confusion_matrix(report["test_modern"]["confusion_matrix"],
                               config.FIGURES_DIR / "confusion_matrix_modern.png",
                               title="Confusion matrix (modern test set)")
+    panels = {"UCI test set": test_metrics["calibration"]}
+    if "test_modern" in report:
+        panels["Modern test set"] = report["test_modern"]["calibration"]
+    plot_reliability(panels, config.FIGURES_DIR / "calibration.png")
     print(f"\nSaved metrics, misclassified messages and figures to {config.REPORTS_DIR}")
 
 

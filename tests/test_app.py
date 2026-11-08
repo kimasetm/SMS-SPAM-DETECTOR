@@ -131,7 +131,7 @@ def test_labelled_csv_shows_accuracy_on_users_file(app):
 
     assert not app.exception
     assert any("How accurate" in h.value for h in app.subheader)
-    assert len(app.table) == 1   # confusion matrix table
+    assert any("Predicted spam" in t.value.columns for t in app.table)   # confusion matrix table
     # The first "Accuracy" metric belongs to the batch tab (the dashboard's comes later)
     accuracy = next(m.value for m in app.metric if m.label == "Accuracy")
     assert accuracy.endswith("%")
@@ -140,6 +140,18 @@ def test_labelled_csv_shows_accuracy_on_users_file(app):
 def test_unreadable_labels_show_warning(app):
     app.file_uploader[0].upload("odd.csv", b"message,label\nhello there,maybe\n", "text/csv").run()
     assert any("none of its values could be read" in w.value for w in app.warning)
+
+
+def test_csv_upload_includes_collapsed_drift_check(app):
+    sample = (PROJECT_ROOT / "samples" / "labeled_messages.csv").read_bytes()
+    app.file_uploader[0].upload("labeled_messages.csv", sample, "text/csv").run()
+    drift = next(e for e in app.expander if e.label == "Data drift check")
+    assert not drift.proto.expanded            # collapsed, so the demo stays simple
+    assert not app.exception
+
+
+def test_dashboard_shows_calibration(app):
+    assert any("Confidence calibration" in m.value for m in app.markdown)
 
 
 def test_bad_csv_shows_error(app):

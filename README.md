@@ -212,6 +212,35 @@ for selection. It's measured at each variant's own threshold, so low-threshold v
 - The large jump in disguised spam caught compared with the previous model (UCI 67 → 85 of 90) is **mostly due to the
   lower threshold**, not to repair alone.
 
+### Confidence calibration
+
+A model is *calibrated* when its confidence matches reality: of the messages it rates "90% spam", about 90% really
+are. Confidence scores are calibrated with **temperature scaling**: one number, T, fitted on the validation set,
+with probability = sigmoid(logit / T). The decision threshold is converted to match, so **no SPAM/HAM decision
+changes** (verified: identical confusion matrices). Only the confidence numbers change.
+
+| Test set | Calibration error (ECE) before → after | Brier score before → after |
+|---|---|---|
+| UCI | 0.0168 → **0.0119** | 0.0188 → **0.0183** |
+| Modern | 0.0728 → 0.0825 | 0.0512 → **0.0474** |
+
+T = 1.55, meaning the model was overconfident overall. Calibration helped on the UCI test set, but the ECE got worse on
+the modern test set. The reliability diagram shows why: on modern messages, the model is *under*confident (messages
+it rates 20–60% are nearly all spam), and a single temperature fitted mostly on UCI-like validation data softens
+confidence in the wrong direction for them. The modern set is also small (195 messages), so its ECE is noisy.
+
+<img src="reports/figures/calibration.png" alt="Reliability diagram" width="760">
+
+### Monitoring for data drift
+
+Spam changes over time, and new messages don't come with correct answers, so accuracy can't be measured live.
+`python -m src.monitor messages.csv` (and a collapsed **Data drift check** after a CSV upload in the app) compares a batch
+of messages with a baseline profile of the validation set, saved with the model, using signals that need no labels:
+share of unknown words, predicted spam rate, share of uncertain predictions and message length.
+
+Example: 6 Spanish messages (3 of them scams) gave a **normal-looking** predicted spam rate (16.7% vs 15.9%), so the
+model's failure would go unnoticed, but the monitor flagged **62.5% unknown words** (baseline 4.4%).
+
 ## Installation
 
 Requires Python 3.10 or newer.
@@ -255,6 +284,8 @@ python -m src.predict "WINNER!! You have been selected to receive a £900 prize 
 # SPAM  (confidence 97.7%, spam probability 0.9774)
 
 python -m src.batch samples/labeled_messages.csv predictions.csv
+
+python -m src.monitor samples/labeled_messages.csv   # data-drift check against the validation baseline
 ```
 
 The CSV needs a `message` column (`text`, `sms` or `body` also work). An optional `label` column (spam/ham) enables

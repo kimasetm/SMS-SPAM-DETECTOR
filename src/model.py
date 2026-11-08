@@ -93,16 +93,26 @@ class SpamClassifier(nn.Module):
         return self.output(x).squeeze(-1)                       # (batch,)
 
 
-def predict_probabilities(model, vectorizer, cleaned_texts, batch_size: int = 256) -> np.ndarray:
-    """Return the predicted spam probability (0-1) for each *cleaned* message."""
+def predict_logits(model, vectorizer, cleaned_texts, batch_size: int = 256) -> np.ndarray:
+    """Return the raw score (logit) for each *cleaned* message. Positive = leaning spam."""
     model.eval()
-    probabilities = []
+    logits = []
     with torch.no_grad():   # no gradients needed when only predicting
         for start in range(0, len(cleaned_texts), batch_size):
             ids = torch.tensor(vectorizer.transform(cleaned_texts[start:start + batch_size]))
-            # sigmoid converts the raw score (logit) into a probability
-            probabilities.append(torch.sigmoid(model(ids)).numpy())
-    return np.concatenate(probabilities) if probabilities else np.array([])
+            logits.append(model(ids).numpy())
+    return np.concatenate(logits) if logits else np.array([])
+
+
+def predict_probabilities(model, vectorizer, cleaned_texts, batch_size: int = 256) -> np.ndarray:
+    """Return the predicted spam probability (0-1) for each *cleaned* message.
+
+    The logit is divided by the model's calibration temperature (1.0 = no
+    calibration; see src/calibration.py), then a sigmoid turns it into a probability.
+    """
+    logits = predict_logits(model, vectorizer, cleaned_texts, batch_size)
+    temperature = getattr(model, "temperature", 1.0)
+    return 1.0 / (1.0 + np.exp(-logits / temperature))
 
 
 def build_model(model_config: dict) -> SpamClassifier:
@@ -148,4 +158,6 @@ def load_artifacts(weights_path=MODEL_WEIGHTS_FILE, vectorizer_path=VECTORIZER_F
     # weights_only=True: only load tensors, never arbitrary Python objects (safer)
     model.load_state_dict(torch.load(weights_path, map_location="cpu", weights_only=True))
     model.eval()   # switch off dropout for predictions
+    # Calibration temperature chosen on the validation set (older models: none)
+    model.temperature = model_config.get("temperature", 1.0)
     return model, vectorizer, model_config

@@ -52,6 +52,7 @@ MODEL_WEIGHTS_FILE = MODEL_DIR / "spam_classifier.pt"    # learned weights
 VECTORIZER_FILE = MODEL_DIR / "vectorizer.json"          # vocabulary from training data
 MODEL_CONFIG_FILE = MODEL_DIR / "model_config.json"      # architecture + training settings
 HISTORY_FILE = MODEL_DIR / "training_history.json"       # loss/accuracy per epoch
+MONITORING_BASELINE_FILE = MODEL_DIR / "monitoring_baseline.json"   # validation-set profile for drift checks
 
 # Evaluation outputs (created by src/evaluate.py)
 REPORTS_DIR = PROJECT_ROOT / "reports"
@@ -100,3 +101,5 @@ EARLY_STOPPING_PATIENCE = 3   # stop after this many epochs without validation i
 SPAM_WEIGHT = None
 # Choose the decision threshold that maximizes F1 on the validation set
 TUNE_THRESHOLD = True
+# Calibrate confidence scores with temperature scaling (fitted on the validation set)
+CALIBRATE = True
