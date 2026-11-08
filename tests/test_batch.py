@@ -11,6 +11,7 @@ from src.batch import (
     classify_dataframe,
     find_label_column,
     main,
+    mark_correct,
     read_messages_csv,
     score_labeled_results,
     summarize,
@@ -129,6 +130,12 @@ def test_invalid_rows_and_unknown_labels_are_skipped():
     scored = score_labeled_results(results, "label")
     assert scored["rows_scored"] == 2
     assert scored["rows_skipped"] == 2
+
+
+def test_mark_correct():
+    results = pd.DataFrame({"label": ["spam", "spam", "ham", "maybe", "ham"],
+                            "prediction": ["SPAM", "HAM", "HAM", "HAM", "INVALID"]})
+    assert mark_correct(results, "label").tolist() == ["✅", "❌", "✅", "", ""]
 
 
 def test_no_usable_labels_returns_none():

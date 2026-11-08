@@ -98,6 +98,20 @@ def find_label_column(df: pd.DataFrame, message_column: str):
     return None
 
 
+def parse_labels(results: pd.DataFrame, label_column: str) -> pd.Series:
+    """Convert label text to 1 (spam) / 0 (ham); unrecognized labels become NaN."""
+    return results[label_column].astype(str).str.strip().str.lower().map(LABEL_VALUES)
+
+
+def mark_correct(results: pd.DataFrame, label_column: str) -> pd.Series:
+    """✅ if the prediction matches the label, ❌ if not, blank if it can't be checked."""
+    truth = parse_labels(results, label_column)
+    predicted_spam = results["prediction"] == "SPAM"
+    checkable = truth.notna() & (results["prediction"] != "INVALID")
+    marks = ((truth == 1) == predicted_spam).map({True: "✅", False: "❌"})
+    return marks.where(checkable, "")
+
+
 def score_labeled_results(results: pd.DataFrame, label_column: str):
     """Compare predictions with the file's own labels.
 
@@ -105,7 +119,7 @@ def score_labeled_results(results: pd.DataFrame, label_column: str):
     (see LABEL_VALUES). Returns None if no rows can be scored, otherwise
     {"metrics": ..., "rows_scored": n, "rows_skipped": n}.
     """
-    true_labels = results[label_column].astype(str).str.strip().str.lower().map(LABEL_VALUES)
+    true_labels = parse_labels(results, label_column)
     usable = true_labels.notna() & (results["prediction"] != "INVALID")
     if not usable.any():
         return None
