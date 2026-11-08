@@ -26,6 +26,7 @@ from src import config
 from src.calibration import calibrated_threshold, fit_temperature
 from src.metrics import choose_threshold
 from src.model import build_model, predict_logits, predict_probabilities, save_artifacts
+from src.monitor import compute_profile, save_baseline
 from src.preprocessing import load_processed_split
 from src.text_vectorizer import TextVectorizer
 
@@ -229,6 +230,9 @@ def main() -> None:
 
     save_artifacts(model, vectorizer, model_config)
     config.HISTORY_FILE.write_text(json.dumps(history, indent=2), encoding="utf-8")
+
+    # Baseline for drift monitoring: what the validation messages look like to this model
+    save_baseline(compute_profile(val_df["clean_message"].tolist(), model, vectorizer, model_config["threshold"]))
 
     t = model_config["training"]
     print(f"\nBest epoch: {t['best_epoch']} of {t['epochs_run']} "
