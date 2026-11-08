@@ -65,7 +65,7 @@ SMS text
   → Dropout (0.3)
   → Dense (16, ReLU)
   → Dropout (0.3)
-  → Dense (1) → sigmoid          probability that the message is spam (≥ 0.5 → SPAM)
+  → Dense (1) → sigmoid          probability that the message is spam (≥ 0.30 → SPAM; threshold tuned on validation)
 ```
 
 - 202,593 trainable parameters.
@@ -100,19 +100,41 @@ The dataset isn't stored in this repository; `python -m src.download_data` downl
 
 Measured on the **held-out test set**: 765 messages (675 ham, 90 spam) that weren't used for training or model selection.
 
-| Metric | Value |
-|---|---|
-| Accuracy | **97.65%** |
-| Precision (spam) | **95.00%**: of the messages flagged as spam, 95% were spam |
-| Recall (spam) | **84.44%**: the model caught 76 of the 90 spam messages |
-| F1-score (spam) | **0.8941** |
-| ROC-AUC | **0.9863** |
+| Metric | v1.0 (threshold 0.50) | **v2 (threshold 0.30)** |
+|---|---|---|
+| Accuracy | 97.65% | **97.65%** |
+| Precision (spam) | 95.00% | **93.90%** |
+| Recall (spam) | 84.44% (76 of 90 caught) | **85.56%** (77 of 90 caught) |
+| F1-score (spam) | 0.8941 | **0.8953** |
+| False alarms | 4 of 675 | 5 of 675 |
+| ROC-AUC | 0.9863 | 0.9863 |
 
 <img src="reports/figures/confusion_matrix.png" alt="Confusion matrix" width="420">
 
-The model rarely raises false alarms (4 of 675 legitimate messages flagged), but it misses about 1 in 6 spam
-messages. Because only ~12% of messages are spam, accuracy alone is misleading: labelling everything "ham" would
-score 88%. That's why precision, recall and F1 are reported. Full results are in [`reports/metrics.json`](reports/metrics.json).
+Because only ~12% of messages are spam, accuracy alone is misleading: labelling everything "ham" would score 88%.
+That's why precision, recall and F1 are reported. Full results are in [`reports/metrics.json`](reports/metrics.json)
+(v1.0: [`reports/metrics_v1.json`](reports/metrics_v1.json)).
+
+### Improving spam recall: experiment
+
+v1.0 missed about 1 in 6 spam messages. To fix this, four ways of handling the class imbalance were compared using
+**only the validation set**, with a selection rule fixed before running: highest validation F1
+(`python -m src.compare_models`).
+
+| Variant (validation set, 89 spam) | Threshold | Precision | Recall | F1 |
+|---|---|---|---|---|
+| v1.0 baseline (no weighting) | 0.50 | 97.40% | 84.27% | 0.9036 |
+| **No weighting, threshold tuned on validation** ✅ | **0.30** | 94.12% | **89.89%** | **0.9195** |
+| Moderate spam weighting (√ ham/spam ratio) | 0.68 | 96.30% | 87.64% | 0.9176 |
+| Full spam weighting (ham/spam ratio) | 0.89 | 96.15% | 84.27% | 0.8982 |
+
+**Findings:** weighting spam more heavily during training did *not* beat simply lowering the decision threshold.
+On the test set, the gain was smaller than on validation (+1 spam caught rather than +5), at the cost of one extra
+false alarm. With only 90 test spam messages, one message is about one percentage point of recall, so the
+improvement is modest. The network's weights are unchanged; only the threshold moved.
+
+Note: the test set was first used to evaluate v1.0. All v2 choices were made on the validation set, and the test set
+was used once more only to report the final result.
 
 ## Installation
 

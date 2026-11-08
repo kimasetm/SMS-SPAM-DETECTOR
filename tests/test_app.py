@@ -85,7 +85,9 @@ def test_csv_upload_shows_summary_and_download(app):
     metrics = {m.label: m.value for m in app.metric}
     assert metrics["Messages"] == "12"
     assert int(metrics["Spam"]) + int(metrics["Ham"]) + int(metrics["Invalid"]) == 12
-    assert len(app.dataframe) == 1
+    results_table = app.dataframe[0].value   # the batch tab's table comes first on the page
+    assert list(results_table.columns[:3]) == ["Message", "Prediction", "Confidence"]
+    assert len(results_table) == 12
 
 
 def test_unlabelled_csv_has_no_accuracy_section(app):
@@ -123,7 +125,13 @@ def test_dashboard_shows_real_metrics_from_file(app):
     """The dashboard must display the saved evaluation results, not hard-coded numbers."""
     test_metrics = json.loads(METRICS_FILE.read_text(encoding="utf-8"))["test"]
     shown = {m.label: m.value for m in app.metric}
+    assert shown["Recall"] == f"{test_metrics['recall']:.2%}"
     assert shown["Accuracy"] == f"{test_metrics['accuracy']:.2%}"
     assert shown["Precision"] == f"{test_metrics['precision']:.2%}"
     assert shown["Recall"] == f"{test_metrics['recall']:.2%}"
     assert shown["F1-score"] == f"{test_metrics['f1']:.3f}"
+
+
+def test_dashboard_shows_change_from_v1(app):
+    recall = next(m for m in app.metric if m.label == "Recall")
+    assert "vs v1.0" in recall.delta

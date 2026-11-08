@@ -49,10 +49,15 @@ def load_detector() -> SpamDetector:
 
 
 @st.cache_data
-def load_metrics():
-    if not config.METRICS_FILE.exists():
+def load_json(path):
+    """Read a JSON results file, or return None if it doesn't exist."""
+    if not path.exists():
         return None
-    return json.loads(config.METRICS_FILE.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_metrics():
+    return load_json(config.METRICS_FILE)
 
 
 def set_example(text: str) -> None:
@@ -89,10 +94,10 @@ def show_scanner(detector: SpamDetector) -> None:
 
     result = st.session_state.get("last_result")
     if result is not None:
-        show_result(result)
+        show_result(result, detector.threshold)
 
 
-def show_result(result) -> None:
+def show_result(result, threshold: float) -> None:
     confidence = format_confidence(result.confidence)
     if result.is_spam:
         st.error(f"### 🚫 SPAM\nThe model predicts this message is **spam** "
@@ -103,8 +108,12 @@ def show_result(result) -> None:
 
     st.progress(result.spam_probability,
                 text=f"Spam probability: {result.spam_probability:.1%} "
-                     f"(messages at {config.SPAM_THRESHOLD:.0%} or above are labelled spam)")
-    if 0.35 <= result.spam_probability <= 0.65:
+                     f"(messages at {threshold:.0%} or above are labelled spam)")
+    if result.is_spam and result.spam_probability < 0.5:
+        st.info(f"Flagged because its spam probability is above the {threshold:.0%} cutoff. The cutoff was "
+                "lowered from 50% to catch more spam, so borderline messages like this one are flagged. "
+                "Treat the result with caution.", icon="ℹ️")
+    elif abs(result.spam_probability - threshold) <= 0.15:
         st.info("The model is uncertain about this message. Treat the result with caution.", icon="ℹ️")
 
     with st.expander("What did the model see?"):
@@ -171,13 +180,13 @@ def show_batch(detector: SpamDetector) -> None:
                        file_name=output_name, mime="text/csv", type="primary")
 
     if label_column:
-        show_labeled_scores(results, label_column)
+        show_labeled_scores(results, label_column, detector.threshold)
 
 
-def show_labeled_scores(results, label_column: str) -> None:
+def show_labeled_scores(results, label_column: str, threshold: float) -> None:
     """Score predictions against the labels in the uploaded file."""
     st.subheader("How accurate was the model on this file?")
-    scored = score_labeled_results(results, label_column)
+    scored = score_labeled_results(results, label_column, threshold)
     if scored is None:
         st.warning(f"The **{label_column}** column was found, but none of its values could be read. "
                    "Use **spam** or **ham** for each row.", icon="⚠️")
@@ -218,12 +227,28 @@ def show_dashboard(detector: SpamDetector) -> None:
     st.write(f"Results on the **held-out test set**: {test['num_messages']:,} messages "
              f"({test['num_ham']:,} ham, {test['num_spam']:,} spam) that the model never saw during training.")
 
+    # Show the change from v1.0 (fixed 50% threshold) next to each metric
+    baseline = load_json(config.BASELINE_METRICS_FILE)
+    base = baseline["test"] if baseline else None
+
+    def change(key, as_percent=True):
+        if base is None or base[key] == test[key]:
+            return None
+        diff = test[key] - base[key]
+        return f"{diff * 100:+.2f} pts vs v1.0" if as_percent else f"{diff:+.4f} vs v1.0"
+
     a, b, c, d = st.columns(4)
-    a.metric("Accuracy", f"{test['accuracy']:.2%}", help="Share of all messages classified correctly.")
-    b.metric("Precision", f"{test['precision']:.2%}",
+    a.metric("Accuracy", f"{test['accuracy']:.2%}", change("accuracy"),
+             help="Share of all messages classified correctly.")
+    b.metric("Precision", f"{test['precision']:.2%}", change("precision"),
              help="Of the messages flagged as spam, how many really were spam.")
-    c.metric("Recall", f"{test['recall']:.2%}", help="Of all real spam messages, how many were caught.")
-    d.metric("F1-score", f"{test['f1']:.3f}", help="Balance (harmonic mean) of precision and recall.")
+    c.metric("Recall", f"{test['recall']:.2%}", change("recall"),
+             help="Of all real spam messages, how many were caught.")
+    d.metric("F1-score", f"{test['f1']:.3f}", change("f1", as_percent=False),
+             help="Balance (harmonic mean) of precision and recall.")
+    if base:
+        st.caption(f"Changes compared with v1.0, which used a fixed 50% spam threshold. v2 uses a "
+                   f"{test['threshold']:.0%} threshold chosen on the validation set to catch more spam.")
 
     cm = test["confusion_matrix"]
     st.markdown(
@@ -257,9 +282,25 @@ def show_dashboard(detector: SpamDetector) -> None:
 | Optimizer / learning rate | Adam / {training['learning_rate']} |
 | Epochs run (early stopping) | {training['epochs_run']} (best: epoch {training['best_epoch']}) |
 | Best validation accuracy | {training['best_val_accuracy']:.2%} |
+| Spam decision threshold (chosen on validation) | {detector.threshold:.2f} |
 | Test ROC-AUC | {test['roc_auc']:.4f} |
 """
         )
+
+    comparison = load_json(config.MODEL_COMPARISON_FILE)
+    if comparison:
+        with st.expander("Experiment: handling class imbalance (validation set)"):
+            st.write("Only about 12% of messages are spam. Four approaches were compared on the **validation** "
+                     "set, and the one with the highest F1-score was selected (rule fixed before running).")
+            st.dataframe(pd.DataFrame(comparison["variants"]).rename(columns={
+                "variant": "Variant", "spam_weight": "Spam weight", "threshold": "Threshold",
+                "val_precision": "Precision", "val_recall": "Recall", "val_f1": "F1",
+                "val_spam_caught": "Spam caught", "val_false_alarms": "False alarms"}),
+                hide_index=True, width="stretch",
+                column_config={"Precision": st.column_config.NumberColumn(format="percent"),
+                               "Recall": st.column_config.NumberColumn(format="percent"),
+                               "F1": st.column_config.NumberColumn(format="%.4f")})
+            st.caption(f"Selected: {comparison['selected']}.")
 
 
 # ---------------------------------------------------------------------------

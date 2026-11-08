@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from src import config
 from src.metrics import compute_metrics
 from src.predict import InvalidMessageError, get_detector
 
@@ -112,8 +113,12 @@ def mark_correct(results: pd.DataFrame, label_column: str) -> pd.Series:
     return marks.where(checkable, "")
 
 
-def score_labeled_results(results: pd.DataFrame, label_column: str):
+def score_labeled_results(results: pd.DataFrame, label_column: str,
+                          threshold: float = config.SPAM_THRESHOLD):
     """Compare predictions with the file's own labels.
+
+    threshold must be the same one used to make the predictions
+    (SpamDetector.threshold), so the scores match the SPAM/HAM labels shown.
 
     Rows are skipped if the message was INVALID or the label isn't recognized
     (see LABEL_VALUES). Returns None if no rows can be scored, otherwise
@@ -125,7 +130,8 @@ def score_labeled_results(results: pd.DataFrame, label_column: str):
         return None
 
     metrics = compute_metrics(true_labels[usable].astype(int).to_numpy(),
-                              results.loc[usable, "spam_probability"].astype(float).to_numpy())
+                              results.loc[usable, "spam_probability"].astype(float).to_numpy(),
+                              threshold=threshold)
     return {
         "metrics": metrics,
         "rows_scored": int(usable.sum()),
@@ -190,13 +196,14 @@ def main(argv=None) -> int:
         print(f"Error: {error}")
         return 1
 
-    results = classify_dataframe(df, column)
+    detector = get_detector()
+    results = classify_dataframe(df, column, detector)
     output_path.write_bytes(to_csv_bytes(results))
     s = summarize(results)
     print(f"Classified {s['total']} messages: {s['spam']} spam, {s['ham']} ham, {s['invalid']} invalid")
 
     label_column = find_label_column(df, column)
-    scored = score_labeled_results(results, label_column) if label_column else None
+    scored = score_labeled_results(results, label_column, detector.threshold) if label_column else None
     if scored:
         m = scored["metrics"]
         print(f"Compared with the '{label_column}' column ({scored['rows_scored']} rows scored, "

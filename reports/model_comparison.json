@@ -1,0 +1,46 @@
+{
+  "selection_rule": "highest validation F1",
+  "selected": "No weight, tuned threshold",
+  "variants": [
+    {
+      "variant": "v1.0 baseline (no weight, threshold 0.5)",
+      "spam_weight": 1.0,
+      "threshold": 0.5,
+      "val_precision": 0.974025974025974,
+      "val_recall": 0.8426966292134831,
+      "val_f1": 0.9036144578313253,
+      "val_spam_caught": 75,
+      "val_false_alarms": 2
+    },
+    {
+      "variant": "No weight, tuned threshold",
+      "spam_weight": 1.0,
+      "threshold": 0.3,
+      "val_precision": 0.9411764705882353,
+      "val_recall": 0.898876404494382,
+      "val_f1": 0.9195402298850575,
+      "val_spam_caught": 80,
+      "val_false_alarms": 5
+    },
+    {
+      "variant": "Sqrt spam weight, tuned threshold",
+      "spam_weight": 2.75,
+      "threshold": 0.68,
+      "val_precision": 0.9629629629629629,
+      "val_recall": 0.8764044943820225,
+      "val_f1": 0.9176470588235294,
+      "val_spam_caught": 78,
+      "val_false_alarms": 3
+    },
+    {
+      "variant": "Balanced spam weight, tuned threshold",
+      "spam_weight": 7.55,
+      "threshold": 0.89,
+      "val_precision": 0.9615384615384616,
+      "val_recall": 0.8426966292134831,
+      "val_f1": 0.8982035928143712,
+      "val_spam_caught": 75,
+      "val_false_alarms": 3
+    }
+  ]
+}

@@ -13,6 +13,22 @@ from sklearn.metrics import (
 from src import config
 
 
+def choose_threshold(y_true, y_prob) -> float:
+    """Pick the decision threshold with the best F1-score.
+
+    Call this on VALIDATION data only. Choosing the threshold on the test set
+    would make the test results look better than they really are.
+    Ties are broken by picking the threshold closest to 0.5.
+    """
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob)
+    candidates = np.round(np.arange(0.05, 0.951, 0.01), 2)
+    scores = [f1_score(y_true, (y_prob >= t).astype(int), zero_division=0) for t in candidates]
+    best = max(scores)
+    tied = [t for t, s in zip(candidates, scores) if s == best]
+    return float(min(tied, key=lambda t: abs(t - 0.5)))
+
+
 def compute_metrics(y_true, y_prob, threshold: float = config.SPAM_THRESHOLD) -> dict:
     """Compute classification metrics. Spam (1) is the "positive" class.
 
