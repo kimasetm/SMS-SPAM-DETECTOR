@@ -17,6 +17,9 @@ data/processed/*
 # regenerate locally with: python -m src.evaluate
 reports/misclassified_test_messages.csv
 
+# Reruns of the historical v2 experiment on current data (see src/compare_models.py)
+reports/model_comparison_rerun.json
+
 # Editors / OS
 .vscode/
 .idea/

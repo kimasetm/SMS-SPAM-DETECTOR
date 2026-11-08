@@ -13,6 +13,14 @@ Experiments:
   architecture (v3):  average pooling vs. a 1D CNN, more epochs, and
                       character-level repair of disguised words ("fr33")
 
+The v2 results in reports/model_comparison.json were produced on the UCI data
+only, with the v2 text cleaning. Rerunning "imbalance" today uses the current
+data and cleaning, so it writes to model_comparison_rerun.json instead and
+never overwrites the historical results. To reproduce the v2 numbers exactly,
+check out the v2.0 tag and rerun its pipeline (verified to match):
+    git checkout v2.0
+    python -m src.download_data && python -m src.preprocessing && python -m src.compare_models
+
 For information, each variant also reports how many disguised validation
 spam messages it still catches (see src/robustness.py). This is NOT used
 for selection.
@@ -30,7 +38,8 @@ from src.train import train_model
 
 EXPERIMENTS = {
     "imbalance": {
-        "file": config.MODEL_COMPARISON_FILE,
+        # Historical v2 results stay in config.MODEL_COMPARISON_FILE (see docstring)
+        "file": config.REPORTS_DIR / "model_comparison_rerun.json",
         # The v2 experiment used the v2 model settings
         "base": {"architecture": "avg_pool", "max_epochs": 30, "repair_misspellings": False, "calibrate": False},
         "variants": {

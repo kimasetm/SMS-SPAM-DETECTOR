@@ -169,8 +169,8 @@ catches more spam overall and more disguised spam (partly thanks to repair, most
 the experiment below), **but** the threshold chosen on the validation set (0.10) is low, so false alarms on the UCI
 test set rose from 6 to 16 (2.4% of legitimate messages).
 That model was kept because it was selected by a rule fixed before looking at test results; choosing a different
-model *after* seeing them would make the test results unreliable. A more stable way of choosing the threshold is listed
-under future improvements. (The 0.10 threshold is on the raw probability; with calibration it's shown as 0.19 in the
+model *after* seeing them would make the test results unreliable. A more stable way of choosing the threshold (e.g.
+cross-validation) would be the next step. (The 0.10 threshold is on the raw probability; with calibration it's shown as 0.19 in the
 app, and every decision is the same.)
 
 <img src="reports/figures/confusion_matrix.png" alt="Confusion matrix (UCI test set)" width="400"> <img src="reports/figures/confusion_matrix_modern.png" alt="Confusion matrix (modern test set)" width="400">
@@ -182,8 +182,10 @@ That's why precision, recall and F1 are reported. Full results are in [`reports/
 ### Improving spam recall: experiment
 
 v1.0 missed about 1 in 6 spam messages. To fix this, four ways of handling the class imbalance were compared using
-**only the validation set**, with a selection rule fixed before running: highest validation F1
-(`python -m src.compare_models`).
+**only the validation set**, with a selection rule fixed before running: highest validation F1.
+This experiment ran on the UCI data only; to reproduce these exact numbers, check out the `v2.0` tag and run
+`python -m src.download_data`, `python -m src.preprocessing` and `python -m src.compare_models`. (On the current code, `python -m src.compare_models imbalance` reruns it with today's
+data and saves the result separately.)
 
 | Variant (validation set, 89 spam) | Threshold | Precision | Recall | F1 |
 |---|---|---|---|---|
@@ -294,7 +296,7 @@ python -m src.download_data     # download the dataset into data/raw/
 python -m src.preprocessing     # clean, de-duplicate and split the data
 python -m src.train             # train the network (about 15 seconds on a laptop CPU)
 python -m src.evaluate          # test-set metrics and charts → reports/
-python -m src.compare_models    # optional: rerun the class-imbalance experiment (validation set)
+python -m src.compare_models    # optional: rerun the v3 model-selection experiment (validation set)
 ```
 
 ### Predict from the command line
@@ -380,18 +382,6 @@ Each release tackled the measured weaknesses of the previous one. Current status
 | English only | **Remains.** No vetted multilingual SMS data was used; the drift monitor at least flags other languages. |
 
 Full details, with measured examples: **[docs/limitations.md](docs/limitations.md)**.
-
-## Future improvements
-
-- **A more stable threshold choice** (e.g. cross-validation or a cost-based rule) to reduce the higher false-alarm rate.
-- **More, newer and multilingual training data**, so that larger sequence models (LSTM or a small pre-trained
-  transformer) could show their advantage over average pooling.
-- **Calibration per data source**, since one temperature can't fit both old and modern messages.
-- **Stronger link intelligence**: Google Safe Browsing or URLhaus (API keys kept in Streamlit secrets), certificate
-  checks, and following shortened links in a sandbox.
-- **Continuous monitoring and retraining**: record aggregate drift statistics over time (never message text) and
-  retrain when drift is detected.
-- **Public deployment** on Streamlit Community Cloud (prepared; see [docs/deployment.md](docs/deployment.md)).
 
 ## Documentation
 
