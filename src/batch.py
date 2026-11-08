@@ -5,6 +5,9 @@ Used by the web app's upload feature, and from the command line:
 
 The input CSV needs a column of messages, named "message", "text", "sms" or
 "body" (any capitalization). A file with a single column is also accepted.
+
+If the file also has a "label" column (spam/ham), the predictions are
+compared with those labels and accuracy, precision, recall and F1 are reported.
 """
 
 import io
@@ -13,11 +16,20 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.metrics import compute_metrics
 from src.predict import InvalidMessageError, get_detector
 
 MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024   # 5 MB
 MAX_ROWS = 5000
 MESSAGE_COLUMN_NAMES = ("message", "text", "sms", "body")
+
+# Optional column with the correct answer for each message. If present, the
+# predictions can be scored (accuracy, precision, recall...).
+LABEL_COLUMN_NAMES = ("label", "actual", "class", "category")
+LABEL_VALUES = {
+    "spam": 1, "1": 1, "yes": 1, "true": 1,
+    "ham": 0, "0": 0, "no": 0, "false": 0, "not spam": 0, "legitimate": 0,
+}
 
 # Columns added to the results
 RESULT_COLUMNS = ["prediction", "confidence", "spam_probability", "error"]
@@ -76,6 +88,35 @@ def find_message_column(df: pd.DataFrame) -> str:
     raise BatchFileError(
         f"Couldn't find the message column. Name it one of: {', '.join(MESSAGE_COLUMN_NAMES)}. "
         f"Columns found: {', '.join(map(str, df.columns))}.")
+
+
+def find_label_column(df: pd.DataFrame, message_column: str):
+    """Return the name of the label column, or None if the file has no labels."""
+    for column in df.columns:
+        if column != message_column and str(column).strip().lower() in LABEL_COLUMN_NAMES:
+            return column
+    return None
+
+
+def score_labeled_results(results: pd.DataFrame, label_column: str):
+    """Compare predictions with the file's own labels.
+
+    Rows are skipped if the message was INVALID or the label isn't recognized
+    (see LABEL_VALUES). Returns None if no rows can be scored, otherwise
+    {"metrics": ..., "rows_scored": n, "rows_skipped": n}.
+    """
+    true_labels = results[label_column].astype(str).str.strip().str.lower().map(LABEL_VALUES)
+    usable = true_labels.notna() & (results["prediction"] != "INVALID")
+    if not usable.any():
+        return None
+
+    metrics = compute_metrics(true_labels[usable].astype(int).to_numpy(),
+                              results.loc[usable, "spam_probability"].astype(float).to_numpy())
+    return {
+        "metrics": metrics,
+        "rows_scored": int(usable.sum()),
+        "rows_skipped": int((~usable).sum()),
+    }
 
 
 def classify_dataframe(df: pd.DataFrame, message_column: str, detector=None) -> pd.DataFrame:
@@ -139,6 +180,14 @@ def main(argv=None) -> int:
     output_path.write_bytes(to_csv_bytes(results))
     s = summarize(results)
     print(f"Classified {s['total']} messages: {s['spam']} spam, {s['ham']} ham, {s['invalid']} invalid")
+
+    label_column = find_label_column(df, column)
+    scored = score_labeled_results(results, label_column) if label_column else None
+    if scored:
+        m = scored["metrics"]
+        print(f"Compared with the '{label_column}' column ({scored['rows_scored']} rows scored, "
+              f"{scored['rows_skipped']} skipped): accuracy {m['accuracy']:.2%}, "
+              f"precision {m['precision']:.2%}, recall {m['recall']:.2%}, F1 {m['f1']:.3f}")
     print(f"Saved predictions to {output_path}")
     return 0
 

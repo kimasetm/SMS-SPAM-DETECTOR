@@ -9,8 +9,10 @@ from src.batch import (
     MAX_ROWS,
     BatchFileError,
     classify_dataframe,
+    find_label_column,
     main,
     read_messages_csv,
+    score_labeled_results,
     summarize,
     to_csv_bytes,
 )
@@ -87,6 +89,59 @@ def test_invalid_rows_are_marked_not_dropped():
     assert results["error"][1] == "Message is empty."
     assert results["error"][0] == ""
     assert summarize(results) == {"total": 3, "spam": 0, "ham": 1, "invalid": 2}
+
+
+# ---------- scoring files that include labels ----------
+
+def test_label_column_is_found_only_when_present():
+    df = pd.DataFrame({"message": ["hi"], "Label": ["ham"]})
+    assert find_label_column(df, "message") == "Label"
+    assert find_label_column(pd.DataFrame({"message": ["hi"]}), "message") is None
+
+
+def test_scores_match_hand_calculation():
+    # Hand-made predictions: 2 spam (1 caught, 1 missed), 2 ham (both correct)
+    results = pd.DataFrame({
+        "label": ["spam", "SPAM", "ham", " Ham "],      # case and spaces are ignored
+        "prediction": ["SPAM", "HAM", "HAM", "HAM"],
+        "spam_probability": [0.9, 0.2, 0.1, 0.3],
+    })
+    scored = score_labeled_results(results, "label")
+    m = scored["metrics"]
+    assert scored["rows_scored"] == 4 and scored["rows_skipped"] == 0
+    assert m["accuracy"] == pytest.approx(0.75)
+    assert m["precision"] == pytest.approx(1.0)
+    assert m["recall"] == pytest.approx(0.5)
+    assert m["confusion_matrix"]["false_negative"] == 1
+
+
+def test_numeric_and_word_labels_are_understood():
+    results = pd.DataFrame({"label": ["1", "0", "yes", "no", "legitimate"],
+                            "prediction": ["SPAM", "HAM", "SPAM", "HAM", "HAM"],
+                            "spam_probability": [0.9, 0.1, 0.8, 0.2, 0.3]})
+    assert score_labeled_results(results, "label")["metrics"]["accuracy"] == 1.0
+
+
+def test_invalid_rows_and_unknown_labels_are_skipped():
+    results = pd.DataFrame({"label": ["spam", "ham", "maybe", "spam"],
+                            "prediction": ["SPAM", "HAM", "HAM", "INVALID"],
+                            "spam_probability": [0.9, 0.1, 0.2, None]})
+    scored = score_labeled_results(results, "label")
+    assert scored["rows_scored"] == 2
+    assert scored["rows_skipped"] == 2
+
+
+def test_no_usable_labels_returns_none():
+    results = pd.DataFrame({"label": ["?", ""], "prediction": ["HAM", "HAM"], "spam_probability": [0.1, 0.2]})
+    assert score_labeled_results(results, "label") is None
+
+
+def test_labeled_sample_file_end_to_end():
+    df, column = read_messages_csv(PROJECT_ROOT / "samples" / "labeled_messages.csv")
+    results = classify_dataframe(df, column)
+    scored = score_labeled_results(results, find_label_column(df, column))
+    assert scored["rows_scored"] == len(df)
+    assert 0.0 <= scored["metrics"]["accuracy"] <= 1.0
 
 
 # ---------- export ----------
