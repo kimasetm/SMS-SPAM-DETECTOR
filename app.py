@@ -41,6 +41,18 @@ EXAMPLES = {
 # Example senders, to show the sender check (a UK premium-rate number)
 EXAMPLE_SENDERS = {"Prize scam": "09061701461"}
 
+# Blue banner under the title (same blues as the theme in .streamlit/config.toml).
+# White text on these blues has a contrast ratio above 4.5:1, so it stays readable.
+BANNER = """
+<div style="background: linear-gradient(135deg, #1c5cab 0%, #2a78d6 100%); color: #ffffff;
+            padding: 0.9rem 1.2rem; border-radius: 0.6rem; margin: 0.2rem 0 1rem 0;">
+  <div style="font-size: 1.05rem; font-weight: 600;">A neural network that classifies text messages as SPAM or HAM</div>
+  <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 0.25rem;">
+    PyTorch model &middot; Link Safety Check &middot; Sender check &middot; Batch CSV &middot; Evaluation dashboard
+  </div>
+</div>
+"""
+
 DISCLAIMER = (
     "SmartSpam is a machine learning class project trained on SMS messages from around 2011. "
     "It can be wrong, and it is **not** protection against phishing, scams or malware. "
@@ -491,8 +503,8 @@ def show_experiment(path, title: str, description: str) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    st.title("SmartSpam — SMS Spam Detection")
-    st.caption("A neural network that classifies text messages as **SPAM** or **HAM** (legitimate).")
+    st.title(":blue[SmartSpam] — SMS Spam Detection")
+    st.markdown(BANNER, unsafe_allow_html=True)
 
     try:
         detector = load_detector()
