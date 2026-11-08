@@ -25,6 +25,7 @@ from src.batch import (
 )
 from src.link_check import HIGH, LOW, MEDIUM, NO_FLAGS, check_links
 from src.monitor import check_messages
+from src.threat_intel import add_online_findings, check_sender, fetch_blocklist, lookup_domain_age
 from src.predict import InvalidMessageError, SpamDetector, format_confidence
 
 st.set_page_config(page_title="SmartSpam — SMS Spam Detection", page_icon="📱", layout="centered")
@@ -37,6 +38,8 @@ EXAMPLES = {
     "Family": "Can you pick up milk on the way home?",
     "Delivery scam": "Your package could not be delivered. Reschedule here: http://parcel-redelivery.info",
 }
+# Example senders, to show the sender check (a UK premium-rate number)
+EXAMPLE_SENDERS = {"Prize scam": "09061701461"}
 
 DISCLAIMER = (
     "SmartSpam is a machine learning class project trained on SMS messages from around 2011. "
@@ -63,8 +66,9 @@ def load_metrics():
     return load_json(config.METRICS_FILE)
 
 
-def set_example(text: str) -> None:
+def set_example(text: str, sender: str = "") -> None:
     st.session_state["message_input"] = text
+    st.session_state["sender_input"] = sender
     st.session_state.pop("last_result", None)
 
 
@@ -79,10 +83,15 @@ def show_scanner(detector: SpamDetector) -> None:
     st.caption("Try an example:")
     columns = st.columns(len(EXAMPLES))
     for column, (name, text) in zip(columns, EXAMPLES.items()):
-        column.button(name, on_click=set_example, args=(text,), width="stretch")
+        column.button(name, on_click=set_example, args=(text, EXAMPLE_SENDERS.get(name, "")), width="stretch")
 
     message = st.text_area("SMS message", key="message_input", height=130,
                            placeholder="e.g. Congratulations! You've won a free prize...")
+    left, right = st.columns([1, 1])
+    left.text_input("Sender (optional)", key="sender_input", placeholder="e.g. 09061701461 or AMAZON")
+    right.checkbox("Online link checks", key="online_checks",
+                   help="Checks links against the OpenPhish phishing feed and looks up how old the domain is (RDAP). "
+                        "This sends the link's address to those services. Off by default.")
 
     if st.button("Predict", type="primary"):
         if not message.strip():
@@ -92,6 +101,8 @@ def show_scanner(detector: SpamDetector) -> None:
             try:
                 st.session_state["last_result"] = detector.predict(message)
                 st.session_state["last_message"] = message   # the exact text that was predicted
+                st.session_state["last_sender"] = st.session_state.get("sender_input", "")
+                st.session_state["last_online"] = st.session_state.get("online_checks", False)
             except InvalidMessageError as error:
                 st.warning(str(error), icon="⚠️")
                 st.session_state.pop("last_result", None)
@@ -121,6 +132,7 @@ def show_result(result, threshold: float) -> None:
         st.info("The model is uncertain about this message. Treat the result with caution.", icon="ℹ️")
 
     show_link_check(result)
+    show_sender_check()
 
     with st.expander("What did the model see?"):
         st.write("Before prediction, the message is cleaned exactly as during training: lowercased, "
@@ -137,15 +149,41 @@ RISK_DISPLAY = {
 }
 
 
+@st.cache_data(ttl=12 * 60 * 60, show_spinner="Downloading the OpenPhish phishing feed...")
+def cached_blocklist():
+    """The OpenPhish feed, downloaded at most every 12 hours. None if it can't be reached."""
+    try:
+        return fetch_blocklist()
+    except Exception:   # network problems must never break the app
+        return None
+
+
+@st.cache_data(ttl=24 * 60 * 60, show_spinner=False)
+def cached_domain_age(domain: str) -> dict:
+    return lookup_domain_age(domain)
+
+
 def show_link_check(result) -> None:
     """Rule-based checks on any links in the message (separate from the AI prediction)."""
     reports = check_links(st.session_state.get("last_message", ""))
     if not reports:
         return
 
+    online = st.session_state.get("last_online", False)
     st.markdown("#### 🔗 Link Safety Check")
     st.caption("Rule-based checks on the links themselves, separate from the AI model, which sees every link "
-               "as the same placeholder word. Links are never opened.")
+               "as the same placeholder word. Links are never opened."
+               + (" Online checks: OpenPhish phishing feed and domain age (RDAP)." if online else
+                  " Turn on **Online link checks** to also check a phishing blocklist and the domain's age."))
+
+    if online:
+        with st.spinner("Running online checks..."):
+            status = add_online_findings(reports, cached_blocklist(), age_lookup=cached_domain_age)
+        if status["blocklist"] == "unavailable":
+            st.caption("⚠️ The OpenPhish feed couldn't be downloaded, so the blocklist wasn't checked.")
+        failed = [d for d, s in status["domain_age"].items() if s == "error"]
+        if failed:
+            st.caption(f"⚠️ Domain age couldn't be checked for: {', '.join(failed)}.")
 
     for report in reports:
         show, icon, label = RISK_DISPLAY[report.risk_level]
@@ -159,6 +197,20 @@ def show_link_check(result) -> None:
     if not risky:
         st.caption("No warning signs doesn't mean a link is safe. When in doubt, go to the company's "
                    "website directly instead of using the link.")
+
+
+def show_sender_check() -> None:
+    """Offline checks on the optional sender field."""
+    sender = st.session_state.get("last_sender", "").strip()
+    if not sender:
+        return
+    st.markdown("#### 📇 Sender check")
+    findings = check_sender(sender)
+    if not findings:
+        st.success(f"No warning signs in the sender `{sender}`. Phone numbers can still be faked.", icon="✅")
+    for f in findings:
+        show, icon, _ = RISK_DISPLAY[f.severity]
+        show(f"**{f.title}** (`{sender}`): {f.explanation}", icon=icon)
 
 
 # ---------------------------------------------------------------------------

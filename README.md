@@ -40,6 +40,12 @@ evaluation dashboard.
 - **Link Safety Check:** flags phishing warning signs in any links (raw IP addresses, the `@` trick, punycode
   look-alikes, brand names on unofficial domains, link shorteners, abused domain endings, phishing words, plain
   `http`), without ever opening them. It warns when the AI rates the text as legitimate but the link is risky.
+- **Online threat intelligence (opt-in):** checks links against the [OpenPhish](https://openphish.com) community
+  phishing feed and looks up the domain's registration date with RDAP (domains under 30 days old are high risk).
+  No API keys are needed; it's off by default because it sends the link's address to those services, and network
+  failures are reported instead of breaking the app.
+- **Sender check:** an optional sender field flags UK/US premium-rate numbers, texts sent from email addresses, short
+  codes and sender names (which can be spoofed).
 - **Batch CSV classification:** upload up to 5,000 messages, review the results and download the predictions.
   If the file includes a `label` column, the app also reports accuracy, precision, recall and F1 on your file.
 - **Model evaluation dashboard:** real test-set metrics with the change from v1.0, the confusion matrix, training
