@@ -17,7 +17,9 @@ The v2 results in reports/model_comparison.json were produced on the UCI data
 only, with the v2 text cleaning. Rerunning "imbalance" today uses the current
 data and cleaning, so it writes to model_comparison_rerun.json instead and
 never overwrites the historical results. To reproduce the v2 numbers exactly,
-check out the v2.0 tag:  git checkout v2.0 && python -m src.compare_models
+check out the v2.0 tag and rerun its pipeline (verified to match):
+    git checkout v2.0
+    python -m src.download_data && python -m src.preprocessing && python -m src.compare_models
 
 For information, each variant also reports how many disguised validation
 spam messages it still catches (see src/robustness.py). This is NOT used

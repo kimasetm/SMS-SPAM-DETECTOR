@@ -117,6 +117,6 @@ services. **Don't paste personal, financial or confidential messages into a publ
 
 ## How these limitations could be reduced
 
-See *Future improvements* in the [README](../README.md#future-improvements): a more stable threshold choice, more and
+See *Limitations and possible improvements* in the [project report](report.md#5-limitations-and-possible-improvements): a more stable threshold choice, more and
 multilingual data (which could let sequence models help), calibration per data source, stronger link intelligence,
 and continuous monitoring with retraining.
