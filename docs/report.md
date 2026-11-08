@@ -23,16 +23,19 @@ The project includes:
   returns a label with a confidence score.
 - **A Streamlit web app** with a message scanner, CSV batch classification (with optional accuracy scoring
   when the file includes labels) and a model evaluation dashboard.
-- **86 automated tests**, run by GitHub Actions on every pull request, and documentation that includes the
+- **Version 2 improvements:** a decision threshold chosen by a controlled experiment to catch more spam, and a
+  rule-based **Link Safety Check** that flags phishing warning signs in links (see section 3).
+- **127 automated tests**, run by GitHub Actions on every pull request, and documentation that includes the
   model's limitations.
 
 ### Results (held-out test set: 765 messages, 90 spam)
 
-| Accuracy | Precision | Recall | F1-score | ROC-AUC |
-|---|---|---|---|---|
-| 97.65% | 95.00% | 84.44% | 0.894 | 0.986 |
+| Version | Accuracy | Precision | Recall | F1-score | ROC-AUC |
+|---|---|---|---|---|---|
+| v1.0 (threshold 0.50) | 97.65% | 95.00% | 84.44% | 0.894 | 0.986 |
+| **v2 (threshold 0.30)** | **97.65%** | **93.90%** | **85.56%** | **0.895** | **0.986** |
 
-The model wrongly flagged 4 of 675 legitimate messages and missed 14 of 90 spam messages.
+v2 caught 77 of 90 spam messages (v1.0: 76) and wrongly flagged 5 of 675 legitimate messages (v1.0: 4).
 
 ## 2. Why I chose these technologies
 
@@ -55,7 +58,7 @@ The model wrongly flagged 4 of 675 legitimate messages and missed 14 of 90 spam 
 | Embedding (32 dimensions) | Learns a vector for each word; words used in similar contexts end up with similar vectors. |
 | Global average pooling | Averages the word vectors into one vector per message, ignoring padding (the PyTorch equivalent of `GlobalAveragePooling1D` with masking). |
 | Dense (16, ReLU) + dropout (0.3) | Learns combinations of features; dropout randomly disables neurons during training to reduce overfitting. |
-| Dense (1) + sigmoid | Outputs the probability that the message is spam. A message is labelled spam at ≥ 0.5. |
+| Dense (1) + sigmoid | Outputs the probability that the message is spam. In v2, a message is labelled spam at ≥ 0.30 (a threshold chosen on the validation set; v1.0 used 0.50). |
 
 Training used binary cross-entropy loss, the Adam optimizer (learning rate 0.001) and batches of 32.
 Training stopped after epoch 18 because validation loss hadn't improved for 3 epochs, and the weights from
@@ -75,16 +78,26 @@ the best epoch (15) were kept.
 5. **A misleading accuracy number.** In the first two epochs, the model had 88.35% validation accuracy while
    predicting "ham" for everything, because 88% of messages are ham. That's why I report precision, recall and
    F1, and why a test demonstrates this case.
-6. **Spam recall is lower than the other metrics (84%).** It was tempting to tune the model after seeing the test
-   results, but that would make the test score dishonest. I kept the test set untouched and listed better
-   approaches (class weighting, tuning the threshold on the validation set) as future improvements.
-7. **A security bug caught by testing.** I protect exported CSV files against *formula injection*: cells starting
+6. **Spam recall was the weakest metric (84%).** Tuning the model on the test results would have made the test
+   score dishonest. In version 2, I compared four approaches **on the validation set only**, with the selection
+   rule (highest validation F1) fixed before running: the v1.0 baseline, a tuned threshold, and two levels of
+   class weighting. Surprisingly, class weighting didn't help; simply lowering the threshold to 0.30 scored best
+   (validation recall 84.3% → 89.9%). On the test set, the gain was much smaller (+1 spam caught, +1 false alarm),
+   a reminder that improvements measured on a small validation set often shrink on new data.
+7. **The model couldn't judge links.** Every URL becomes the placeholder word `urltoken`, so a parcel-delivery scam
+   with a fake link was rated HAM. I added a separate, rule-based Link Safety Check that looks for classic phishing
+   signs (IP-address links, the `@` trick, brand names on unofficial domains, shorteners, abused domain endings). It
+   never opens links, and its tests include legitimate links that must not be flagged and a check that no network
+   calls are made. I kept it separate from the AI prediction and labelled it clearly, because the project required
+   the classifier itself to use no keyword rules. One bug I fixed: email addresses like `john.doe@gmail.com` were
+   being treated as links.
+8. **A security bug caught by testing.** I protect exported CSV files against *formula injection*: cells starting
    with `=`, `+`, `-` or `@` could run as formulas in Excel. My first version didn't work, because pandas 3
    stores text in a new data type that my check skipped. A test row in the sample file exposed it; I fixed it
    and added an automated test.
-8. **Large installs.** The default PyTorch package for Linux includes about 2 GB of GPU libraries. I configured
+9. **Large installs.** The default PyTorch package for Linux includes about 2 GB of GPU libraries. I configured
    the CPU-only version so CI runs quickly and the app fits within Streamlit Community Cloud's limits.
-9. **Sensitive content.** The list of misclassified test messages contains explicit spam text, so I kept it out of
+10. **Sensitive content.** The list of misclassified test messages contains explicit spam text, so I kept it out of
    the public repository and generate it locally instead.
 
 ## 4. What I learned
@@ -97,6 +110,10 @@ the best epoch (15) were kept.
 - **Data leakage:** how duplicates and preprocessing fitted on all the data can make results look better than
   they really are.
 - **Reproducibility:** fixing random seeds so that retraining produces identical weights.
+- **Running fair experiments:** deciding the selection rule before looking at results, making choices on the
+  validation set, and reporting a modest result honestly instead of overselling it.
+- **Security thinking:** how phishing links disguise their real destination, and why combining an ML model with
+  simple, explainable rules covers gaps that either one alone would miss.
 - **Software engineering:** organizing code into reusable modules, validating input, writing automated tests,
   using CI, and using a branch-and-pull-request workflow.
 - **Responsible AI:** a model is only as good as its data. My model handles 2011-style prize spam well but
@@ -104,22 +121,19 @@ the best epoch (15) were kept.
 
 ## 5. Limitations and possible improvements
 
-The full discussion is in [limitations.md](limitations.md). In short: the training data is old and narrow; the
-model reads only words (not links or senders); averaging ignores word order; it can be fooled by misspellings;
-and it misses about 1 in 6 spam messages.
+The full discussion is in [limitations.md](limitations.md). In short: the training data is old and narrow;
+averaging ignores word order; it can be fooled by misspellings; it still misses about 1 in 7 spam messages; and
+the Link Safety Check uses simple rules, never visits links and can be evaded.
 
 Possible improvements:
 
-1. **Improve spam recall** with class weights during training, and choose the decision threshold on the
-   validation set.
-2. **Use newer, more diverse data,** including modern phishing (smishing) messages and other languages.
-3. **Use sequence-aware models** such as an LSTM, a 1D CNN or a small pre-trained transformer, which understand
+1. **Use newer, more diverse data,** including modern phishing (smishing) messages and other languages.
+2. **Use sequence-aware models** such as an LSTM, a 1D CNN or a small pre-trained transformer, which understand
    word order.
-4. **Add character-level features** to handle misspellings like "fr33".
-5. **Combine signals:** check URLs against threat-intelligence lists and use sender reputation, as real spam
-   filters do.
-6. **Calibrate confidence scores** so that "90% confident" is right about 90% of the time.
-7. **Monitor and retrain** the model as spam evolves.
+3. **Add character-level features** to handle misspellings like "fr33".
+4. **Strengthen the link check** with threat-intelligence blocklists and domain-age data, and add sender checks.
+5. **Calibrate confidence scores** so that "90% confident" is right about 90% of the time.
+6. **Monitor and retrain** the model as spam evolves.
 
 ## 6. Use of AI tools
 

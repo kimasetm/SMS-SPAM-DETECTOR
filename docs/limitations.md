@@ -6,12 +6,13 @@ phishing, scams, malware or other cyberattacks. This page explains why, using re
 
 ## 1. It misses some spam, even on its own test set
 
-On the held-out test set, the model caught **76 of 90** spam messages (recall 84.4%). Roughly **1 in 6 spam
-messages got through**. The test set contains only 90 spam messages, so this estimate is itself uncertain:
-a 95% confidence interval for recall is roughly **76%–90%**.
+v1.0 caught **76 of 90** spam messages on the held-out test set (recall 84.4%). In v2, the decision threshold was
+lowered from 0.50 to 0.30 (chosen on the validation set), and the model caught **77 of 90** (recall 85.6%), with
+one extra false alarm (5 of 675 legitimate messages flagged). Roughly **1 in 7 spam messages still gets through**.
 
-The model favors avoiding false alarms (only 4 of 675 legitimate messages were flagged), so its mistakes
-tend to be spam slipping through rather than real messages being blocked.
+The test set contains only 90 spam messages, so these estimates are uncertain: a 95% confidence interval for
+recall is roughly **77%–91%**. The improvement from v1.0 to v2 is one message, well within that uncertainty.
+Weighting spam more heavily during training was also tried, and it didn't help (see the README's experiment table).
 
 ## 2. The training data is old and narrow
 
@@ -19,20 +20,30 @@ The [UCI SMS Spam Collection](https://archive.ics.uci.edu/dataset/228/sms+spam+c
 2011–2012. Its messages come mainly from UK and Singapore sources and are mostly **prize, ringtone,
 premium-rate and dating spam** from that era. Modern scams look different, and the model handles them poorly:
 
-| Message (written for testing, not from the dataset) | Model output |
+| Message (written for testing, not from the dataset) | Model output (v2, threshold 0.30) |
 |---|---|
-| "Your package could not be delivered. Reschedule here: http://parcel-redelivery.info" | **HAM**, spam probability 19%: missed |
-| "URGENT: Your bank account has been suspended. Verify now at http://secure-bank-login.com" | SPAM, but only 57%: barely caught |
+| "Your package could not be delivered. Reschedule here: http://parcel-redelivery.info" | **HAM**, spam probability 19%: missed by the model (flagged by the Link Safety Check; see below) |
+| "URGENT: Your bank account has been suspended. Verify now at http://secure-bank-login.com" | SPAM, spam probability 57% |
 | "WINNER!! You have been selected to receive a £900 prize reward! …" (2011-style) | SPAM, 98% |
 
 Delivery scams, bank and account-lock phishing, one-time-code (MFA) fraud, cryptocurrency scams and
 messages impersonating real companies are under-represented or absent in the training data.
 
-## 3. It only reads words; it can't inspect links, senders or attachments
+## 3. The model can't judge links; the Link Safety Check only partly fills the gap
 
-During cleaning, every URL becomes the same placeholder word (`urltoken`), and phone numbers become
-`phonetoken`. The model therefore **cannot tell a safe link from a malicious one**, check where a link leads,
-look up a sender's reputation, or scan attachments. Real anti-phishing systems combine many of these signals.
+During cleaning, every URL becomes the same placeholder word (`urltoken`), so the neural network **cannot tell
+a safe link from a malicious one**.
+
+v2 adds a separate, rule-based **Link Safety Check** (`src/link_check.py`). It flags common phishing signs in the
+link text: raw IP addresses, the `@` trick, punycode look-alikes, brand names on unofficial domains, link
+shorteners, frequently abused domain endings, phishing words in the domain, unusual ports and plain `http`. It
+catches the delivery scam above that the model missed. Its limits:
+
+- It **never visits links**, so it can't see where a shortened link leads or what the page contains.
+- It doesn't check threat-intelligence blocklists, domain age or certificates, as real security tools do.
+- Rules can be evaded: a scam on a fresh, plain-looking `.com` domain shows no warning signs, and a legitimate
+  site on a `.info` domain may be flagged. **"No warning signs" never means "safe".**
+- It doesn't check sender phone numbers or attachments.
 
 ## 4. Word order is ignored
 
@@ -79,5 +90,5 @@ a public deployment.**
 ## How these limitations could be reduced
 
 See *Future improvements* in the [README](../README.md#future-improvements): newer and more diverse training
-data, class weighting and threshold tuning to improve recall, sequence-aware models such as LSTMs or
-transformers, and combining text classification with URL and sender reputation checks.
+data, sequence-aware models such as LSTMs or transformers, character-level features against misspellings,
+calibrated confidence scores, and checking links against threat-intelligence blocklists.

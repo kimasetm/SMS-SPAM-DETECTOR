@@ -23,6 +23,7 @@ from src.batch import (
     summarize,
     to_csv_bytes,
 )
+from src.link_check import HIGH, LOW, MEDIUM, NO_FLAGS, check_links
 from src.predict import InvalidMessageError, SpamDetector, format_confidence
 
 st.set_page_config(page_title="SmartSpam — SMS Spam Detection", page_icon="📱", layout="centered")
@@ -33,6 +34,7 @@ EXAMPLES = {
     "Friend": "Hey, are we still meeting for lunch tomorrow at 12?",
     "Free offer": "Congratulations! You've won a free iPhone. Text WIN to 80086 now",
     "Family": "Can you pick up milk on the way home?",
+    "Delivery scam": "Your package could not be delivered. Reschedule here: http://parcel-redelivery.info",
 }
 
 DISCLAIMER = (
@@ -88,6 +90,7 @@ def show_scanner(detector: SpamDetector) -> None:
         else:
             try:
                 st.session_state["last_result"] = detector.predict(message)
+                st.session_state["last_message"] = message   # the exact text that was predicted
             except InvalidMessageError as error:
                 st.warning(str(error), icon="⚠️")
                 st.session_state.pop("last_result", None)
@@ -116,11 +119,45 @@ def show_result(result, threshold: float) -> None:
     elif abs(result.spam_probability - threshold) <= 0.15:
         st.info("The model is uncertain about this message. Treat the result with caution.", icon="ℹ️")
 
+    show_link_check(result)
+
     with st.expander("What did the model see?"):
         st.write("Before prediction, the message is cleaned exactly as during training: lowercased, "
                  "punctuation removed, and URLs, phone numbers, prices and numbers replaced with "
                  "placeholder words.")
         st.code(result.cleaned_text, language=None, wrap_lines=True)
+
+
+RISK_DISPLAY = {
+    HIGH: (st.error, "🚩", "High risk"),
+    MEDIUM: (st.warning, "⚠️", "Medium risk"),
+    LOW: (st.info, "ℹ️", "Low risk"),
+    NO_FLAGS: (st.success, "✅", "No warning signs found"),
+}
+
+
+def show_link_check(result) -> None:
+    """Rule-based checks on any links in the message (separate from the AI prediction)."""
+    reports = check_links(st.session_state.get("last_message", ""))
+    if not reports:
+        return
+
+    st.markdown("#### 🔗 Link Safety Check")
+    st.caption("Rule-based checks on the links themselves, separate from the AI model, which sees every link "
+               "as the same placeholder word. Links are never opened.")
+
+    for report in reports:
+        show, icon, label = RISK_DISPLAY[report.risk_level]
+        details = "".join(f"\n- **{f.title}**: {f.explanation}" for f in report.findings)
+        show(f"**{label}:** `{report.url}`{details}", icon=icon)
+
+    risky = any(r.risk_level in (HIGH, MEDIUM) for r in reports)
+    if risky and not result.is_spam:
+        st.warning("**The AI rated the text as legitimate, but the link shows warning signs.** "
+                   "Don't open the link. Modern scams often use normal-sounding text.", icon="⚠️")
+    if not risky:
+        st.caption("No warning signs doesn't mean a link is safe. When in doubt, go to the company's "
+                   "website directly instead of using the link.")
 
 
 # ---------------------------------------------------------------------------

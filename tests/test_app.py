@@ -69,6 +69,35 @@ def test_example_button_fills_text_box(app):
     assert app.success   # predicted as HAM
 
 
+def test_delivery_scam_link_is_flagged_even_when_model_says_ham(app):
+    click(app, "Delivery scam")
+    click(app, "Predict")
+    assert not app.exception
+    assert any("Link Safety Check" in m.value for m in app.markdown)
+    assert any("High risk" in e.value and "parcel-redelivery.info" in e.value for e in app.error)
+    if app.success:   # the model rated the text as HAM
+        assert any("link shows warning signs" in w.value for w in app.warning)
+
+
+def test_safe_link_shows_no_warning_signs(app):
+    app.text_area(key="message_input").input("Here are the photos https://www.google.com/photos").run()
+    click(app, "Predict")
+    assert any("No warning signs found" in s.value for s in app.success)
+
+
+def test_message_without_links_has_no_link_section(app):
+    click(app, "Family")
+    click(app, "Predict")
+    assert not any("Link Safety Check" in m.value for m in app.markdown)
+
+
+def test_link_check_uses_the_predicted_message_not_later_edits(app):
+    click(app, "Delivery scam")
+    click(app, "Predict")
+    app.text_area(key="message_input").input("edited text without links").run()
+    assert any("parcel-redelivery.info" in e.value for e in app.error)
+
+
 def test_unreadable_input_shows_validation_message(app):
     app.text_area(key="message_input").input("!!! ???").run()
     click(app, "Predict")
