@@ -24,6 +24,7 @@ from src.batch import (
     to_csv_bytes,
 )
 from src.link_check import HIGH, LOW, MEDIUM, NO_FLAGS, check_links
+from src.monitor import check_messages
 from src.predict import InvalidMessageError, SpamDetector, format_confidence
 
 st.set_page_config(page_title="SmartSpam — SMS Spam Detection", page_icon="📱", layout="centered")
@@ -219,6 +220,35 @@ def show_batch(detector: SpamDetector) -> None:
     if label_column:
         show_labeled_scores(results, label_column, detector.threshold)
 
+    show_drift_check(df[column].tolist(), detector)
+
+
+def show_drift_check(messages, detector) -> None:
+    """Collapsed by default: compare the uploaded messages with the data the model was checked on."""
+    with st.expander("Data drift check"):
+        try:
+            result = check_messages(messages, detector)
+        except ValueError:
+            st.write("No readable messages to check.")
+            return
+        if result["warnings"] is None:
+            st.write("No monitoring baseline found. Train the model first: `python -m src.train`.")
+            return
+        st.write("Compares this file with the validation data the model was checked on. Big differences "
+                 "suggest the model may be less reliable for these messages (no labels needed).")
+        profile, base = result["profile"], result["baseline"]
+        st.table(pd.DataFrame({
+            "This file": [f"{profile['unknown_word_rate']:.1%}", f"{profile['predicted_spam_rate']:.1%}",
+                          f"{profile['uncertain_rate']:.1%}", f"{profile['avg_words']:.1f}"],
+            "Baseline": [f"{base['unknown_word_rate']:.1%}", f"{base['predicted_spam_rate']:.1%}",
+                         f"{base['uncertain_rate']:.1%}", f"{base['avg_words']:.1f}"]},
+            index=["Unknown words", "Flagged as spam", "Uncertain predictions", "Words per message"]))
+        if result["warnings"]:
+            for w in result["warnings"]:
+                st.warning(f"**{w['title']}:** {w['explanation']}", icon="⚠️")
+        else:
+            st.success("No drift signals found. (This doesn't prove the model is still accurate.)", icon="✅")
+
 
 def show_labeled_scores(results, label_column: str, threshold: float) -> None:
     """Score predictions against the labels in the uploaded file."""
@@ -321,6 +351,8 @@ def show_dashboard(detector: SpamDetector) -> None:
     if baseline:
         st.caption(f"Changes are compared with {config.BASELINE_LABEL}, which was trained on the UCI data only. "
                    f"The current spam threshold ({test['threshold']:.0%}) was chosen on the validation set.")
+    show_calibration(test, modern, figures)
+
     if (figures / "training_history.png").exists():
         st.image(str(figures / "training_history.png"),
                  caption="Training vs validation loss and accuracy per epoch. Training stopped early when "
@@ -361,6 +393,22 @@ def show_dashboard(detector: SpamDetector) -> None:
                     "v2 experiment: handling class imbalance (UCI validation set)",
                     "Only about 12% of messages are spam. Four approaches were compared on the **validation** "
                     "set, and the one with the highest F1-score was selected (rule fixed before running).")
+
+
+def show_calibration(test: dict, modern, figures) -> None:
+    """How well the confidence scores match reality, before and after temperature scaling."""
+    cal = test.get("calibration")
+    if not cal:
+        return
+    st.markdown("#### Confidence calibration")
+    st.write(f"Confidence scores are calibrated with **temperature scaling** (T = {cal['temperature']:.2f}, "
+             "chosen on the validation set). This changes the confidence numbers, not which messages are "
+             "flagged. Calibration error (ECE, lower is better):")
+    rows = [("UCI test set", cal)] + ([("Modern test set", modern["calibration"])] if modern else [])
+    st.markdown("\n".join(f"- **{name}:** {c['ece_uncalibrated']:.3f} → **{c['ece']:.3f}**" for name, c in rows))
+    if (figures / "calibration.png").exists():
+        st.image(str(figures / "calibration.png"), width="stretch",
+                 caption="Points on the dashed line are perfectly calibrated. Many bins hold only a few messages.")
 
 
 EXPERIMENT_COLUMNS = {
