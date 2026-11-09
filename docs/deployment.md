@@ -2,6 +2,9 @@
 
 Streamlit Community Cloud hosts Streamlit apps for free, straight from a GitHub repository.
 
+**Deployed at:** <https://kimasetm-sms-spam-detector-app-ee33vq.streamlit.app/> (from the `main` branch). The
+post-deployment checklist below passed on November 9, 2026.
+
 ## What's already prepared
 
 - **`app.py`** is in the repository root (the app's entry point).
