@@ -17,7 +17,9 @@ data, misspelling repair, calibrated confidence, drift monitoring, threat-intell
 > ⚠️ SmartSpam is a text classification project for learning purposes. It is **not** protection against
 > phishing, scams or malware. See [Limitations](#limitations).
 
-**Live demo:** not deployed yet. See [docs/deployment.md](docs/deployment.md) to deploy it on Streamlit Community Cloud.
+### 🚀 [Try the live demo](https://kimasetm-sms-spam-detector-app-ee33vq.streamlit.app/)
+
+Hosted on Streamlit Community Cloud. If the app has been idle, it may take about a minute to wake up.
 
 ## Screenshots
 

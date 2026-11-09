@@ -4,7 +4,7 @@
 
 - [ ] Open a terminal in the project folder and activate the environment: `.venv\Scripts\activate`
 - [ ] Start the app: `streamlit run app.py`, then open <http://localhost:8501>
-      (or open the deployed app link so it has time to wake up)
+      (or open the live app, <https://kimasetm-sms-spam-detector-app-ee33vq.streamlit.app/>, a few minutes early so it has time to wake up)
 - [ ] Have `samples/labeled_messages.csv` ready to upload (or download it from the Batch CSV tab)
 - [ ] Open the GitHub repository in a second browser tab: <https://github.com/kimasetm/SMS-SPAM-DETECTOR>
 - [ ] Close unrelated tabs and turn off notifications
