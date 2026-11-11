@@ -390,7 +390,6 @@ Full details, with measured examples: **[docs/limitations.md](docs/limitations.m
 - [Project report](docs/report.md): what was built, technology choices, problems solved, lessons learned
 - [Limitations](docs/limitations.md): what the model and checks can't do, with measured examples
 - [Deployment guide](docs/deployment.md): Streamlit Community Cloud
-- [Demo outline](docs/presentation.md): five-minute presentation script and recording checklist
 
 ## Acknowledgments
 
